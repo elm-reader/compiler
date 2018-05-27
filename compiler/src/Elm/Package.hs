@@ -54,7 +54,7 @@ data Name =
     { _author :: !Text
     , _project :: !Text
     }
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Show)
 
 
 data Package =
