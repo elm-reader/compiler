@@ -95,7 +95,7 @@ getInterfaces (Summary.Summary root project _ interfaces _) locals artifacts =
     pkg =
       Project.getName project
 
-    addArtifact home (Compiler.Artifacts elmi _ _) ifaces =
+    addArtifact home (Compiler.Artifacts elmi _ _ _) ifaces =
       (ModuleName.Canonical pkg home, elmi) : ifaces
 
     addInterface home iface ifaces =

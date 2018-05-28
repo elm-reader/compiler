@@ -22,7 +22,8 @@ import qualified Elm.Package as Pkg
 import qualified Nitpick.PatternMatches as PatternMatches
 import qualified Optimize.Module as Optimize
 import qualified Parse.Parse as Parse
-import qualified Reader
+import qualified Reader.Instrument as Instrument
+import qualified Reader.SourceMap as SrcMap
 import qualified Reporting.Error as Error
 import qualified Reporting.Render.Type.Localizer as L
 import qualified Reporting.Result as Result
@@ -50,6 +51,7 @@ data Artifacts =
     { _elmi :: I.Interface
     , _elmo :: Opt.Graph
     , _docs :: Maybe Docs.Module
+    , _srcMap :: Maybe SrcMap.Module
     }
 
 
@@ -62,13 +64,14 @@ compile flag pkg importDict interfaces source reader =
       basicCanonical <- Result.mapError Error.Canonicalize $
         Canonicalize.canonicalize pkg importDict interfaces valid
 
-      let canonical =
+      let (canonical, maybeSrcMap) =
             case reader of
               Compile.YesReader ->
-                Reader.annotate basicCanonical
+                let (annotated, srcMap) = Instrument.instrument basicCanonical
+                in (annotated, Just srcMap)
 
               Compile.NoReader ->
-                basicCanonical
+                (basicCanonical, Nothing)
 
       let localizer = L.fromModule valid -- TODO should this be strict for GC?
 
@@ -89,6 +92,7 @@ compile flag pkg importDict interfaces source reader =
           { _elmi = I.fromModule annotations canonical
           , _elmo = graph
           , _docs = documentation
+          , _srcMap = maybeSrcMap
           }
 
 
