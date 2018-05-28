@@ -38,12 +38,12 @@ data Flags =
 
 
 run :: [FilePath] -> Flags -> IO ()
-run paths (Flags debug optimize output report read docs) =
+run paths (Flags debug optimize output report reader docs) =
   do  reporter <- toReporter report
       Task.run reporter $
         do  mode <- toMode debug optimize
             summary <- Project.getRoot
-            Project.compile mode (toReaderFlag read) Output.Client output docs summary paths
+            Project.compile mode (toReaderFlag reader) Output.Client output docs summary paths
 
 
 toMode :: Bool -> Bool -> Task.Task Output.Mode
