@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -Wall -fno-warn-unused-do-bind #-}
 module Compile
   ( DocsFlag(..)
+  , ReaderFlag(..)
   , compile
   , Artifacts(..)
   )
@@ -52,7 +53,7 @@ data Artifacts =
     }
 
 
-compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> Bool -> Result i Artifacts
+compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> ReaderFlag -> Result i Artifacts
 compile flag pkg importDict interfaces source reader =
   do
       valid <- Result.mapError Error.Syntax $
@@ -62,10 +63,12 @@ compile flag pkg importDict interfaces source reader =
         Canonicalize.canonicalize pkg importDict interfaces valid
 
       let canonical =
-            if reader then
-              Reader.annotate basicCanonical
-            else
-              basicCanonical
+            case reader of
+              Compile.YesReader ->
+                Reader.annotate basicCanonical
+
+              Compile.NoReader ->
+                basicCanonical
 
       let localizer = L.fromModule valid -- TODO should this be strict for GC?
 
@@ -132,3 +135,10 @@ genarateDocs flag modul =
 
     YesDocs ->
       Just <$> Docs.fromModule modul
+
+
+
+-- READER
+
+
+data ReaderFlag = YesReader | NoReader

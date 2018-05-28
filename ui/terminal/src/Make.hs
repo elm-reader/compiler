@@ -10,6 +10,7 @@ module Make
 
 import qualified System.FilePath as FP
 
+import qualified Elm.Compiler as Compiler
 import qualified Elm.Project as Project
 import qualified Generate.Output as Output
 import qualified Reporting.Exit as Exit
@@ -37,12 +38,12 @@ data Flags =
 
 
 run :: [FilePath] -> Flags -> IO ()
-run paths (Flags debug optimize output report reader docs) =
+run paths (Flags debug optimize output report read docs) =
   do  reporter <- toReporter report
       Task.run reporter $
         do  mode <- toMode debug optimize
             summary <- Project.getRoot
-            Project.compile mode reader Output.Client output docs summary paths
+            Project.compile mode (toReaderFlag read) Output.Client output docs summary paths
 
 
 toMode :: Bool -> Bool -> Task.Task Output.Mode
@@ -93,3 +94,11 @@ docsFile =
     , _suggest = \_ -> return []
     , _examples = \_ -> return ["docs.json","documentation.json"]
     }
+
+
+
+-- READER
+
+toReaderFlag :: Bool -> Compiler.ReaderFlag
+toReaderFlag True = Compiler.YesReader
+toReaderFlag False = Compiler.NoReader

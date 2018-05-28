@@ -26,7 +26,7 @@ import qualified Reporting.Task as Task
 -- COMPILE
 
 
-compile :: Project -> Maybe FilePath -> Module.Interfaces -> Dict Plan.Info -> Bool -> Task.Task (Dict Answer)
+compile :: Project -> Maybe FilePath -> Module.Interfaces -> Dict Plan.Info -> Compiler.ReaderFlag -> Task.Task (Dict Answer)
 compile project maybeDocsPath ifaces modules reader =
   do  Task.report (Progress.CompileStart (Map.size modules))
 
@@ -67,7 +67,7 @@ compileModule
   -> Maybe FilePath
   -> MVar (Dict (MVar Answer))
   -> MVar Module.Interfaces
-  -> Bool
+  -> Compiler.ReaderFlag
   -> Module.Raw
   -> Plan.Info
   -> IO (MVar Answer)

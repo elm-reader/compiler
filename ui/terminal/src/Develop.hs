@@ -20,6 +20,7 @@ import Snap.Core
 import Snap.Http.Server
 import Snap.Util.FileServe
 
+import qualified Elm.Compiler as Compiler
 import qualified Elm.Project as Project
 import qualified Develop.Generate.Help as Generate
 import qualified Develop.Generate.Index as Index
@@ -168,7 +169,7 @@ compileToHtmlBuilder file =
 
       void $ Task.try reporter $
         do  summary <- Project.getRoot
-            Project.compile Output.Dev False Output.Client output Nothing summary [file]
+            Project.compile Output.Dev Compiler.NoReader Output.Client output Nothing summary [file]
 
       result <- takeMVar mvar1
       case result of
