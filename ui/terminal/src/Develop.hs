@@ -168,7 +168,7 @@ compileToHtmlBuilder file =
 
       void $ Task.try reporter $
         do  summary <- Project.getRoot
-            Project.compile Output.Dev Output.Client output Nothing summary [file]
+            Project.compile Output.Dev False Output.Client output Nothing summary [file]
 
       result <- takeMVar mvar1
       case result of

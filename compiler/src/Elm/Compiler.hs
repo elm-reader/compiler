@@ -49,9 +49,10 @@ compile
   -> Map.Map M.Raw M.Canonical
   -> M.Interfaces
   -> BS.ByteString
+  -> Bool
   -> ( [Warning.Warning], Either [Error.Error] Compile.Artifacts )
-compile docsFlag pkg importDict interfaces source =
-  Result.run $ Compile.compile docsFlag pkg importDict interfaces source
+compile docsFlag pkg importDict interfaces source reader =
+  Result.run $ Compile.compile docsFlag pkg importDict interfaces source reader
 
 
 

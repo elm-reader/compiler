@@ -247,7 +247,7 @@ getIface name version info infos depIfaces =
               args <- Args.fromSummary summary
               graph <- Crawl.crawl summary args
               (dirty, cachedIfaces) <- Plan.plan (Just docsPath) summary graph
-              answers <- Compile.compile (Pkg info) (Just docsPath) cachedIfaces dirty
+              answers <- Compile.compile (Pkg info) (Just docsPath) cachedIfaces dirty False
               results <- Artifacts.ignore answers
               _ <- Artifacts.writeDocs results docsPath
 

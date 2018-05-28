@@ -21,6 +21,7 @@ import qualified Elm.Package as Pkg
 import qualified Nitpick.PatternMatches as PatternMatches
 import qualified Optimize.Module as Optimize
 import qualified Parse.Parse as Parse
+import qualified Reader
 import qualified Reporting.Error as Error
 import qualified Reporting.Render.Type.Localizer as L
 import qualified Reporting.Result as Result
@@ -51,14 +52,20 @@ data Artifacts =
     }
 
 
-compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> Result i Artifacts
-compile flag pkg importDict interfaces source =
+compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> Bool -> Result i Artifacts
+compile flag pkg importDict interfaces source reader =
   do
       valid <- Result.mapError Error.Syntax $
         Parse.program pkg source
 
-      canonical <- Result.mapError Error.Canonicalize $
+      basicCanonical <- Result.mapError Error.Canonicalize $
         Canonicalize.canonicalize pkg importDict interfaces valid
+
+      let canonical =
+            if reader then
+              Reader.annotate basicCanonical
+            else
+              basicCanonical
 
       let localizer = L.fromModule valid -- TODO should this be strict for GC?
 

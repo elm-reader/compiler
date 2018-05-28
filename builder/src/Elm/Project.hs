@@ -51,17 +51,18 @@ getRootWithReplFallback =
 
 compile
   :: Output.Mode
+  -> Bool
   -> Output.Target
   -> Maybe Output.Output
   -> Maybe FilePath
   -> Summary
   -> [FilePath]
   -> Task.Task ()
-compile mode target maybeOutput docs summary@(Summary.Summary root project _ _ _) paths =
+compile mode reader target maybeOutput docs summary@(Summary.Summary root project _ _ _) paths =
   do  args <- Args.fromPaths summary paths
       graph <- Crawl.crawl summary args
       (dirty, ifaces) <- Plan.plan docs summary graph
-      answers <- Compile.compile project docs ifaces dirty
+      answers <- Compile.compile project docs ifaces dirty reader
       results <- Artifacts.write root answers
       _ <- traverse (Artifacts.writeDocs results) docs
       Output.generate mode target maybeOutput summary graph results
@@ -76,7 +77,7 @@ compileForRepl noColors localizer source maybeName =
   do  summary@(Summary.Summary root project _ _ _) <- getRoot
       graph <- Crawl.crawlFromSource summary source
       (dirty, ifaces) <- Plan.plan Nothing summary graph
-      answers <- Compile.compile project Nothing ifaces dirty
+      answers <- Compile.compile project Nothing ifaces dirty False
       results <- Artifacts.write root answers
       let (Compiler.Artifacts elmi _ _) = results ! N.replModule
       traverse (Output.generateReplFile noColors localizer summary graph elmi) maybeName
@@ -92,7 +93,7 @@ generateDocs summary@(Summary.Summary root project _ _ _) =
       args <- Args.fromSummary summary
       graph <- Crawl.crawl summary args
       (dirty, ifaces) <- Plan.plan (Just docsPath) summary graph
-      answers <- Compile.compile project (Just docsPath) ifaces dirty
+      answers <- Compile.compile project (Just docsPath) ifaces dirty False
       results <- Artifacts.write root answers
       Output.noDebugUsesInPackage summary graph
       Artifacts.writeDocs results docsPath

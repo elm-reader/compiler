@@ -26,8 +26,8 @@ import qualified Reporting.Task as Task
 -- COMPILE
 
 
-compile :: Project -> Maybe FilePath -> Module.Interfaces -> Dict Plan.Info -> Task.Task (Dict Answer)
-compile project maybeDocsPath ifaces modules =
+compile :: Project -> Maybe FilePath -> Module.Interfaces -> Dict Plan.Info -> Bool -> Task.Task (Dict Answer)
+compile project maybeDocsPath ifaces modules reader =
   do  Task.report (Progress.CompileStart (Map.size modules))
 
       tell <- Task.getReporter
@@ -35,7 +35,7 @@ compile project maybeDocsPath ifaces modules =
       answers <- liftIO $
         do  mvar <- newEmptyMVar
             iMVar <- newMVar ifaces
-            answerMVars <- Map.traverseWithKey (compileModule tell project maybeDocsPath mvar iMVar) modules
+            answerMVars <- Map.traverseWithKey (compileModule tell project maybeDocsPath mvar iMVar reader) modules
             putMVar mvar answerMVars
             traverse readMVar answerMVars
 
@@ -67,10 +67,11 @@ compileModule
   -> Maybe FilePath
   -> MVar (Dict (MVar Answer))
   -> MVar Module.Interfaces
+  -> Bool
   -> Module.Raw
   -> Plan.Info
   -> IO (MVar Answer)
-compileModule tell project maybeDocsPath answersMVar ifacesMVar name info =
+compileModule tell project maybeDocsPath answersMVar ifacesMVar reader name info =
   do  mvar <- newEmptyMVar
 
       void $ forkIO $
@@ -85,7 +86,7 @@ compileModule tell project maybeDocsPath answersMVar ifacesMVar name info =
                     let imports = makeImports project info
                     ifaces <- readMVar ifacesMVar
                     let source = Plan._src info
-                    case Compiler.compile docs pkg imports ifaces source of
+                    case Compiler.compile docs pkg imports ifaces source reader of
                       (_warnings, Left errors) ->
                         do  tell (Progress.CompileFileEnd name Progress.Bad)
                             let time = Plan._time info

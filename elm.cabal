@@ -199,6 +199,7 @@ Executable elm
         Parse.Repl
         Parse.Shader
         Parse.Type
+        Reader
         Reporting.Annotation
         Reporting.Doc
         Reporting.Error
