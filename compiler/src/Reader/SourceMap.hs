@@ -2,11 +2,11 @@
 
 module Reader.SourceMap
   ( Module(..)
-  , Item(..)
+  , Frame(..)
   , Expr(..)
-  , ItemId(..)
+  , FrameId(..)
   , ExprId(..)
-  , itemIdToText
+  , frameIdToText
   , exprIdToText
   )
   where
@@ -19,6 +19,7 @@ import Data.Text (Text)
 
 import qualified AST.Module.Name as ModuleName
 import qualified Elm.Name as N
+import qualified Elm.Package as Pkg
 import qualified Reporting.Region as R
 
 
@@ -28,12 +29,12 @@ import qualified Reporting.Region as R
 
 data Module =
   Module
-    { _items :: Map.Map ItemId Item
+    { _frames :: Map.Map FrameId Frame
     }
     deriving (Show)
 
 
-data Item =
+data Frame =
   Item
     { _region :: R.Region
     , _exprs :: Map.Map ExprId Expr
@@ -54,15 +55,16 @@ data Expr =
 -- IDENTIFIERS
 
 
-data ItemId
-  = Def N.Name
-  | Lam N.Name Int
-  deriving (Eq, Ord, Show)
+data FrameId =
+  FrameId
+    { _module :: ModuleName.Canonical
+    , _def :: N.Name
+    , _frameIndex :: Int
+    }
+    deriving (Eq, Ord, Show)
 
 
-data ExprId
-  = Var N.Name
-  | Anon Int
+newtype ExprId = ExprId Int
   deriving (Eq, Ord, Show)
 
 
@@ -70,21 +72,18 @@ data ExprId
 -- IDENTIFIERS AS TEXT
 
 
-itemIdToText :: ItemId -> Text
-itemIdToText itemId =
-  case itemId of
-    Def name ->
-      N.toText name
-
-    Lam enclosingDef index ->
-      N.toText enclosingDef <> " " <> Text.pack (show index)
+frameIdToText :: FrameId -> Text
+frameIdToText (FrameId moduleName def index) =
+  let
+    (ModuleName.Canonical pkg module_) =
+      moduleName
+  in
+    Pkg.toText pkg
+    <> " " <> N.toText module_
+    <> " " <> N.toText def
+    <> " " <> Text.pack (show index)
 
 
 exprIdToText :: ExprId -> Text
-exprIdToText exprId =
-  case exprId of
-    Var name ->
-      N.toText name
-
-    Anon index ->
-      Text.pack $ show index
+exprIdToText (ExprId index) =
+  Text.pack $ show index
