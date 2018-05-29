@@ -74,7 +74,7 @@ canonicalize env (A.At region pattern) =
       logVar name region (Can.PVar name)
 
     Src.PRecord fields ->
-      logFields fields (Can.PRecord (map A.toValue fields))
+      logFields fields (Can.PRecord fields)
 
     Src.PUnit ->
       Result.ok Can.PUnit

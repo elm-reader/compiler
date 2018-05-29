@@ -252,8 +252,11 @@ destructHelp path (A.At region pattern) revDs =
       let
         toDestruct name =
           Opt.Destructor name (Opt.Field name path)
+
+        unlocatedFields =
+          map A.toValue fields
       in
-      Names.registerFieldList fields (map toDestruct fields ++ revDs)
+      Names.registerFieldList unlocatedFields (map toDestruct unlocatedFields ++ revDs)
 
     Can.PAlias subPattern name ->
       destructHelp (Opt.Root name) subPattern $

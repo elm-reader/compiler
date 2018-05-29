@@ -94,7 +94,7 @@ add (A.At region pattern) expectation state =
       do  extVar <- mkFlexVar
           let extType = VarN extVar
 
-          fieldVars <- traverse (\field -> (,) field <$> mkFlexVar) fields
+          fieldVars <- traverse (\field -> (,) (A.toValue field) <$> mkFlexVar) fields
           let fieldTypes = Map.fromList (map (fmap VarN) fieldVars)
           let recordType = RecordN fieldTypes extType
 

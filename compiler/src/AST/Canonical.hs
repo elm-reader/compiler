@@ -151,7 +151,7 @@ type Pattern =
 data Pattern_
   = PAnything
   | PVar N.Name
-  | PRecord [N.Name]
+  | PRecord [A.Located N.Name]
   | PAlias Pattern N.Name
   | PUnit
   | PTuple Pattern Pattern (Maybe Pattern)
