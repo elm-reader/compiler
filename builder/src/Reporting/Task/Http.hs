@@ -137,7 +137,8 @@ runHelp chan manager tell fetch =
 
 packageDomain :: String
 packageDomain =
-  "https://alpha.elm-lang.org"
+  -- Proxy server redirecting most traffic to https://alpha.elm-lang.org
+  "http://localhost:8080"
 
 
 makePackageUrl :: String -> [(String,String)] -> String
