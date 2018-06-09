@@ -20,8 +20,14 @@ import qualified Reader.SourceMap as SrcMap
 
 instrument :: Can.Module -> (Can.Module, SrcMap.Module)
 instrument module_ =
-  trace ("elm-reader debug -- received canonical AST:\n" ++ ppShow module_) $
-    instrumentModule module_
+  let instrumented = instrumentModule module_
+      message =
+        "elm-reader debug -- received canonical AST:\n"
+        ++ ppShow module_ ++ "\n"
+        ++ "transformed to:\n"
+        ++ ppShow instrumented
+  in
+  trace message instrumented
 
 
 instrumentModule :: Can.Module -> (Can.Module, SrcMap.Module)
@@ -34,10 +40,11 @@ hookExpr expr@(A.At region expr_)  =
     Can.Call fn _args ->
       let
         readFn = A.At region (Can.VarKernel "Reader" "read")
+        locate = A.At (A.toRegion fn)
       in
       A.At
         region
-        (Can.Call readFn [A.At (A.toRegion fn) (Can.Str "a function"), A.At (A.toRegion fn) (Can.Str (pack $ unwords $ lines $ ppShow fn)), expr])
+        (Can.Call readFn [locate (Can.Str "a function"), locate (Can.Str (pack $ unwords $ lines $ ppShow fn)), expr])
     _ -> expr
 
 hookDef :: Can.Def -> Can.Def
