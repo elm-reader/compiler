@@ -4,6 +4,7 @@ module Data.Bag
   , empty
   , one
   , append
+  , concat
   , map
   , toList
   , fromList
@@ -11,7 +12,7 @@ module Data.Bag
   where
 
 
-import Prelude hiding (map)
+import Prelude hiding (map, concat)
 import qualified Data.List as List
 
 
@@ -50,6 +51,11 @@ append left right =
 
     (_, _) ->
       Two left right
+
+
+concat :: [Bag a] -> Bag a
+concat =
+  List.foldl' append empty
 
 
 

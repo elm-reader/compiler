@@ -3,7 +3,6 @@
 module Reader.SourceMap
   ( Module(..)
   , Frame(..)
-  , Expr(..)
   , FrameId(..)
   , ExprId(..)
   , frameIdToText
@@ -35,18 +34,10 @@ data Module =
 
 
 data Frame =
-  Item
+  Frame
     { _region :: R.Region
-    , _exprs :: Map.Map ExprId Expr
-    }
-    deriving (Show)
-
-
-data Expr =
-  Expr
-    { _primaryRegion :: R.Region
-    , _secondaryRegions :: [R.Region]
-    , _fullName :: Maybe (ModuleName.Canonical, N.Name)
+    , _exprRegions :: [(ExprId, R.Region)] -- May contain duplicate ids
+    , _exprNames :: Map.Map ExprId (ModuleName.Canonical, N.Name) -- Some ids may not have entries
     }
     deriving (Show)
 
