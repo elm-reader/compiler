@@ -56,25 +56,25 @@ instrumentModule module_ =
 
 
 instrumentDecls :: ModuleName.Canonical -> Can.Decls -> (Can.Decls, Bag.Bag (SrcMap.FrameId, SrcMap.Frame))
-instrumentDecls module_ decls =
+instrumentDecls home decls =
   case decls of
     Can.Declare def rest ->
       let
         (newDef, defSrcMaps) =
-          instrumentTopLevelDef module_ def
+          instrumentTopLevelDef home def
 
         (newRest, restSrcMaps) =
-          instrumentDecls module_ rest
+          instrumentDecls home rest
       in
         (Can.Declare newDef newRest, Bag.append defSrcMaps restSrcMaps)
 
     Can.DeclareRec defs rest ->
       let
         (newDefs, defSrcMaps) =
-          unzip $ map (instrumentTopLevelDef module_) defs
+          unzip $ map (instrumentTopLevelDef home) defs
 
         (newRest, restSrcMaps) =
-          instrumentDecls module_ rest
+          instrumentDecls home rest
       in
         (Can.DeclareRec newDefs newRest, Bag.append restSrcMaps $ Bag.concat defSrcMaps)
 
@@ -83,7 +83,7 @@ instrumentDecls module_ decls =
 
 
 instrumentTopLevelDef :: ModuleName.Canonical -> Can.Def -> (Can.Def, Bag.Bag (SrcMap.FrameId, SrcMap.Frame))
-instrumentTopLevelDef module_ def =
+instrumentTopLevelDef home def =
   runWithIdState $ do
     let
       (name, args, body) =
@@ -100,7 +100,7 @@ instrumentTopLevelDef module_ def =
 
       rootCtx =
         Context
-          { _moduleName = module_
+          { _moduleName = home
           , _defName = A.toValue name
           , _varIds = Map.empty
           }
@@ -155,24 +155,24 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
           trace "Warning: Encountered an unknown local variable during instrumentation" $
           return (locExpr, noAnswers)
 
-    Can.VarTopLevel module_ name ->
-      return (locExpr, makeQualified exprId region module_ name)
+    Can.VarTopLevel home name ->
+      return (locExpr, makeQualified exprId region home name)
 
     Can.VarKernel _ _ ->
       -- TODO: How should we handle kernel variables?
       return (locExpr, noAnswers)
 
-    Can.VarForeign module_ name _ ->
-      return (locExpr, makeQualified exprId region module_ name)
+    Can.VarForeign home name _ ->
+      return (locExpr, makeQualified exprId region home name)
 
-    Can.VarCtor _ module_ name _ _ ->
-      return (locExpr, makeQualified exprId region module_ name)
+    Can.VarCtor _ home name _ _ ->
+      return (locExpr, makeQualified exprId region home name)
 
-    Can.VarDebug module_ name _ ->
-      return (locExpr, makeQualified exprId region module_ name)
+    Can.VarDebug home name _ ->
+      return (locExpr, makeQualified exprId region home name)
 
-    Can.VarOperator _ module_ name _ ->
-      return (locExpr, makeQualified exprId region module_ name)
+    Can.VarOperator _ home name _ ->
+      return (locExpr, makeQualified exprId region home name)
 
     Can.Chr _ ->
       return (locExpr, noAnswers)
@@ -205,7 +205,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         return (newNegate, srcMap)
 
-    Can.Binop shortName module_ name typeAnnot left right ->
+    Can.Binop shortName home name typeAnnot left right ->
       do
         (newLeft, leftSrcMap) <- instrumentExpr ctx left
         (newRight, rightSrcMap) <- instrumentExpr ctx right
@@ -215,11 +215,11 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             makeExprRegion exprId region
 
           binopNameSrcMap =
-            makeExprName exprId module_ name
+            makeExprName exprId home name
 
           newBinop =
             recordExpr exprId $
-            A.At region $ Can.Binop shortName module_ name typeAnnot newLeft newRight
+            A.At region $ Can.Binop shortName home name typeAnnot newLeft newRight
 
           srcMap =
             combine leftSrcMap $ combine rightSrcMap $ combine binopRegionSrcMap binopNameSrcMap
@@ -270,21 +270,21 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             -- at runtime, so the user may need to inspect it to know which function is actually being
             -- called.
 
-            Can.VarTopLevel module_ name ->
-              return (func, makeExprName exprId module_ name)
+            Can.VarTopLevel home name ->
+              return (func, makeExprName exprId home name)
 
             Can.VarKernel _ _ ->
               -- TODO: How should we handle kernel variables?
               return (func, noAnswers)
 
-            Can.VarForeign module_ name _ ->
-              return (func, makeExprName exprId module_ name)
+            Can.VarForeign home name _ ->
+              return (func, makeExprName exprId home name)
 
-            Can.VarCtor _ module_ name _ _ ->
-              return (func, makeExprName exprId module_ name)
+            Can.VarCtor _ home name _ _ ->
+              return (func, makeExprName exprId home name)
 
-            Can.VarDebug module_ name _ ->
-              return (func, makeExprName exprId module_ name)
+            Can.VarDebug home name _ ->
+              return (func, makeExprName exprId home name)
 
             _ ->
               instrumentExpr ctx func
@@ -712,22 +712,22 @@ makeExprRegion exprId region =
 
 
 makeExprName :: SrcMap.ExprId -> ModuleName.Canonical -> N.Name -> Answers
-makeExprName exprId module_ name =
+makeExprName exprId home name =
   Answers
     { _frames = Bag.empty
     , _exprRegions = Bag.empty
-    , _exprNames = Bag.one (exprId, (module_, name))
+    , _exprNames = Bag.one (exprId, (home, name))
     }
 
 
 makeQualified :: SrcMap.ExprId -> R.Region -> ModuleName.Canonical -> N.Name -> Answers
-makeQualified exprId region module_ name =
+makeQualified exprId region home name =
   let
     regionSrcMap =
       makeExprRegion exprId region
 
     nameSrcMap =
-      makeExprName exprId module_ name
+      makeExprName exprId home name
   in
     combine regionSrcMap nameSrcMap
 
