@@ -261,14 +261,14 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
     Can.Call func args ->
       do
         -- If the func expression is sufficiently simple, we don't want to clutter the source map
-        -- with a separate cell just for the function.  Instead, we want to merge the func expression
-        -- with its enclosing call expression.
+        -- with a separate cell just for the function.  Instead, we want to merge the func
+        -- expression with its enclosing call expression.
         (newFunc, funcSrcMap) <-
           case A.toValue func of
-            -- We specifically do *not* merge VarLocal expressions with the enclosing call expression,
-            -- because if the function is stored in a local variable then it is only known dynamically
-            -- at runtime, so the user may need to inspect it to know which function is actually being
-            -- called.
+            -- We specifically do *not* merge VarLocal expressions with the enclosing call
+            -- expression, because if the function is stored in a local variable then it is only
+            -- known dynamically at runtime, so the user may need to inspect it to know which
+            -- function is actually being called.
 
             Can.VarTopLevel home name ->
               return (func, makeExprName exprId home name)
@@ -789,6 +789,7 @@ addVars vars origCtx =
       addVar name exprId ctx
   in
     List.foldl' addBinding origCtx vars
+
 
 
 -- GENERATE SEQUENTIAL IDENTIFIERS
