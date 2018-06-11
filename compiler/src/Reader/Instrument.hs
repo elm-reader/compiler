@@ -19,6 +19,7 @@ import qualified Data.Map as Map
 import qualified AST.Canonical as Can
 import qualified AST.Module.Name as ModuleName
 import qualified Elm.Name as N
+import qualified Reader.Hooks as Hooks
 import qualified Reader.SourceMap as SrcMap
 import qualified Reporting.Annotation as A
 import qualified Reporting.Region as R
@@ -181,8 +182,16 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
     Can.Negate inner ->
       do
         (newInner, innerSrcMap) <- instrumentExpr ctx inner
-        let negateSrcMap = makeExprRegion exprId region
-        return (A.At region $ Can.Negate newInner, combine innerSrcMap negateSrcMap)
+
+        let
+          newNegate =
+            recordExpr exprId $
+            A.At region $ Can.Negate newInner
+
+          srcMap =
+            combine innerSrcMap $ makeExprRegion exprId region
+
+        return (newNegate, srcMap)
 
     Can.Binop shortName module_ name typeAnnot left right ->
       do
@@ -197,6 +206,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             makeExprName exprId module_ name
 
           newBinop =
+            recordExpr exprId $
             A.At region $ Can.Binop shortName module_ name typeAnnot newLeft newRight
 
           srcMap =
@@ -210,6 +220,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
         let ctxWithVars = addVars (Bag.toList $ Bag.concat argVars) ctx
 
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
+        -- TODO: Record calls from the perspective of the callee
 
         frameId <- freshFrameId ctx
 
@@ -221,6 +232,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             makeExprRegion exprId region
 
           newLambda =
+            recordExpr exprId $
             A.At region $ Can.Lambda args newBody
 
         return (newLambda, combine frameSrcMaps lambdaSrcMap)
@@ -263,6 +275,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             makeExprRegion exprId region
 
           newCall =
+            -- TODO: Record calls from the perspective of the caller
             A.At region $ Can.Call newFunc newArgs
 
         return (newCall, combineMany $ callSrcMap : funcSrcMap : argSrcMaps)
@@ -284,6 +297,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             makeExprRegion exprId region
 
           newIf =
+            recordExpr exprId $
             A.At region $ Can.If newBranches newFinally
 
         return (newIf, combineMany $ ifSrcMap : finallySrcMap : branchSrcMaps)
@@ -295,6 +309,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let ctxWithVar = addVar (defName def) varId ctx
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVar body
+        -- TODO: Record newly bound variable
 
         let newLet = A.At region $ Can.Let newDef newBody
         return (newLet, combine defSrcMap bodySrcMap)
@@ -308,6 +323,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
           unzip <$> sequence (zipWith (instrumentDef ctxWithVars) varIds defs)
 
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
+        -- TODO: Record newly bound variables
 
         let
           newLetRec =
@@ -325,6 +341,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let ctxWithVars = addVars (Bag.toList patVars) ctx
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
+        -- TODO: Record newly bound variables
 
         let
           newLetDestruct =
@@ -343,6 +360,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
               (patVars, patSrcMap) <- instrumentPattern pat
               let ctxWithVars = addVars (Bag.toList patVars) ctx
               (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
+              -- TODO: Record newly bound variables
               return (Can.CaseBranch pat newBody, combine patSrcMap bodySrcMap)
 
         (newVal, valSrcMap) <- instrumentExpr ctx val
@@ -350,7 +368,9 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
         (newBranches, branchSrcMaps) <- unzip <$> traverse instrumentBranch branches
 
         let
-          newCase = A.At region $ Can.Case newVal newBranches
+          newCase =
+            recordExpr exprId $
+            A.At region $ Can.Case newVal newBranches
 
           srcMap =
             combineMany $ makeExprRegion exprId region : valSrcMap : branchSrcMaps
@@ -366,6 +386,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let
           newAccess =
+            recordExpr exprId $
             A.At region $ Can.Access newRecord field
 
           srcMap =
@@ -387,6 +408,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let
           newUpdate =
+            recordExpr exprId $
             A.At region $ Can.Update name newRecord $ Map.fromList newUpdates
 
           srcMap =
@@ -409,7 +431,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             A.At region $ Can.Record $ Map.fromList newFields
 
           srcMap =
-            combineMany $ makeExprRegion exprId region : fieldSrcMaps
+            combineMany fieldSrcMaps
 
         return (newRecord, srcMap)
 
@@ -585,6 +607,15 @@ instrumentPattern (A.At region pat) =
         (argVars, argAnswers) <- unzip <$> traverse instrumentArg args
 
         return (Bag.concat argVars, combine ctorSrcMap $ combineMany argAnswers)
+
+
+
+-- INSTRUMENTATION CALLS
+
+
+recordExpr :: SrcMap.ExprId -> Can.Expr -> Can.Expr
+recordExpr (SrcMap.ExprId index) wrapped =
+  A.At R.zero $ Can.Call Hooks.recordExpr [A.At R.zero $ Can.Int index, wrapped]
 
 
 
