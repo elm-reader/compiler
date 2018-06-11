@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -Wall #-}
 module Stuff.Paths
   ( docs
+  , solution
   , summary
   , prepublishDir
   , removeStuff
@@ -34,6 +35,11 @@ stuff =
 docs :: FilePath
 docs =
   stuff </> "docs.json"
+
+
+solution :: FilePath
+solution =
+  stuff </> "solution.dat"
 
 
 summary :: FilePath

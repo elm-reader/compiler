@@ -18,6 +18,7 @@ import qualified Data.Maybe as Maybe
 
 import qualified AST.Source as Src
 import qualified AST.Canonical as Can
+import qualified AST.Module.Name as ModuleName
 import qualified Elm.Name as N
 import qualified Reporting.Annotation as A
 import qualified Reporting.Doc as D
@@ -212,7 +213,7 @@ canToDoc localizer context tipe =
     Can.TVar name ->
       D.fromName name
 
-    Can.TType home name args ->
+    Can.TType (ModuleName.Canonical _ home) name args ->
       apply context
         (L.toDoc localizer home name)
         (map (canToDoc localizer App) args)
@@ -231,7 +232,7 @@ canToDoc localizer context tipe =
         (canToDoc localizer None b)
         (map (canToDoc localizer None) (Maybe.maybeToList maybeC))
 
-    Can.TAlias home name args _ ->
+    Can.TAlias (ModuleName.Canonical _ home) name args _ ->
       apply context
         (L.toDoc localizer home name)
         (map (canToDoc localizer App . snd) args)

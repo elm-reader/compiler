@@ -50,12 +50,10 @@ init :: FilePath -> Project -> Map Name PkgInfo -> Module.Interfaces -> Summary
 init root project deps ifaces =
   let
     exposed =
-      case project of
-        Project.App info ->
-          getExposed deps (_app_deps_direct info)
-
-        Project.Pkg info ->
-          getExposed deps (_pkg_deps info)
+      Project.get
+        (getExposed deps . _app_deps)
+        (getExposed deps . _pkg_deps)
+        project
 
     privatizedInterfaces =
       Map.mapMaybeWithKey (privatize exposed) ifaces

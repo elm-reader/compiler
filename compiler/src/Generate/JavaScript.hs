@@ -498,25 +498,23 @@ toMainExports mode mains =
 generateExports :: Mode.Mode -> Trie -> B.Builder
 generateExports mode (Trie maybeMain subs) =
   let
-    starter end =
-      case maybeMain of
-        Nothing ->
-          "{"
+    object =
+      case Map.toList subs of
+        [] ->
+          "{}"
 
-        Just (home, main) ->
-          "{'init':"
-          <> JS.exprToBuilder (Expr.generateMain mode home main)
-          <> end
-    in
-    case Map.toList subs of
-      [] ->
-        starter "" <> "}"
+        (name, subTrie) : otherSubTries ->
+          "{'" <> Text.encodeUtf8Builder name <> "':"
+          <> generateExports mode subTrie
+          <> List.foldl' (addSubTrie mode) "}" otherSubTries
+  in
+  case maybeMain of
+    Nothing ->
+      object
 
-      (name, subTrie) : otherSubTries ->
-        starter "," <>
-        "'" <> Text.encodeUtf8Builder name <> "':"
-        <> generateExports mode subTrie
-        <> List.foldl' (addSubTrie mode) "}" otherSubTries
+    Just (home, main) ->
+      let initialize = Expr.generateMain mode home main in
+      JS.exprToBuilder initialize <> "(" <> object <> ")"
 
 
 addSubTrie :: Mode.Mode -> B.Builder -> (Text.Text, Trie) -> B.Builder

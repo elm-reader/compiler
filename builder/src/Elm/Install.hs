@@ -5,7 +5,7 @@ module Elm.Install
   where
 
 
-import Control.Monad (filterM, foldM, forM, msum, void)
+import Control.Monad (filterM, forM, msum, void)
 import Control.Monad.Except (catchError, lift, liftIO)
 import Data.Map ((!))
 import qualified Data.Map as Map
@@ -69,31 +69,19 @@ attemptElmJsonChange root oldProject toString changes =
     AlreadyInstalled ->
       do  liftIO $ putStrLn "It is already installed!"
 
-    PromoteTrans newProject ->
-      attempt newProject $
-        D.vcat
-         [ D.fillSep
-            ["I","found","it","in","your","elm.json","file,"
-            ,"but","in","the",D.dullyellow "\"indirect\"","dependencies."
-            ]
-         , D.fillSep
-            ["Should","I","move","it","into",D.green "\"direct\""
-            ,"dependencies","for","more","general","use?","[Y/n]: "
-            ]
-         ]
-
     PromoteTest newProject ->
-      attempt newProject $
-        D.vcat
-         [ D.fillSep
-            ["I","found","it","in","your","elm.json","file,"
-            ,"but","in","the",D.dullyellow "\"test-dependencies\"","field."
-            ]
-         , D.fillSep
-            ["Should","I","move","it","into",D.green "\"dependencies\""
-            ,"for","more","general","use?","[Y/n]: "
-            ]
-         ]
+      attempt newProject $ D.vcat $
+       [ "I found it in your elm.json file!"
+       , "In \"test-dependencies\" though."
+       , "Should I move it into \"dependencies\" for more general use? [Y/n]: "
+       ]
+
+    PromoteTrans newProject ->
+      attempt newProject $ D.vcat $
+       [ "I found it in your elm.json file!"
+       , "In \"transitive-dependencies\" though."
+       , "Should I move it into \"dependencies\" for more general use? [Y/n]: "
+       ]
 
     Changes changeDict newProject ->
       let
@@ -120,21 +108,31 @@ data Changes vsn
 
 
 makeAppPlan :: Cache.PackageRegistry -> Pkg.Name -> Project.AppInfo -> Task.Task (Changes Pkg.Version)
-makeAppPlan registry pkg info@(Project.AppInfo _ _ depsDirect depsTrans testDirect testTrans) =
-  if Map.member pkg depsDirect then
+makeAppPlan registry pkg info@(Project.AppInfo elm srcDirs deps test trans) =
+  if Map.member pkg deps then
     return AlreadyInstalled
   else
-    do  (AppAnswer old new newInfo) <- toAppAnswer registry pkg info
+    case Map.lookup pkg test of
+      Just vsn ->
+        return $ PromoteTest $ Project.App $
+          Project.AppInfo elm srcDirs (Map.insert pkg vsn deps) (Map.delete pkg test) trans
 
-        return $
-          if Map.member pkg depsTrans then
-            PromoteTrans (Project.App newInfo)
+      Nothing ->
+        case Map.lookup pkg trans of
+          Just vsn ->
+            return $ PromoteTrans $ Project.App $
+              Project.AppInfo elm srcDirs (Map.insert pkg vsn deps) test (Map.delete pkg trans)
 
-          else if Map.member pkg testDirect || Map.member pkg testTrans then
-            PromoteTest (Project.App newInfo)
+          Nothing ->
+            do  changes <- addToApp registry pkg info
 
-          else
-            Changes (detectChanges old new) (Project.App newInfo)
+                let news = Map.mapMaybe keepNew changes
+                let newDeps = addNews (Just pkg) news deps
+                let newTest = addNews Nothing news test
+                let newTrans = Map.union (Map.difference news (Map.union newDeps newTest)) trans
+
+                return $ Changes changes $ Project.App $
+                  Project.AppInfo elm srcDirs newDeps newTest newTrans
 
 
 makePkgPlan :: Cache.PackageRegistry -> Pkg.Name -> Project.PkgInfo -> Task.Task (Changes Constraint)
@@ -215,83 +213,40 @@ keepNew change =
 -- ADD TO APP
 
 
-data AppAnswer =
-  AppAnswer
-    { _old :: Map.Map Pkg.Name Pkg.Version
-    , _new :: Map.Map Pkg.Name Pkg.Version
-    , _info :: Project.AppInfo
-    }
-
-
-toAppAnswer :: Cache.PackageRegistry -> Pkg.Name -> Project.AppInfo -> Task.Task AppAnswer
-toAppAnswer registry pkg info@(Project.AppInfo _ _ depsDirect depsTrans testDirect testTrans) =
+addToApp :: Cache.PackageRegistry -> Pkg.Name -> Project.AppInfo -> Task.Task (Map.Map Pkg.Name (Change Pkg.Version))
+addToApp registry pkg info@(Project.AppInfo _ _ deps tests trans) =
   Explorer.run registry $
     do  Explorer.exists pkg
-        result <- Solver.run (toAppAnswerHelp pkg info)
+        let old = Map.unions [ deps, tests, trans ]
+        result <- Solver.run (addToAppHelp pkg info)
         case result of
-          Just answer ->
-            return answer
+          Just new ->
+            return $ detectChanges old new
 
           Nothing ->
-            do  badNames <-
-                  filterM isBadElm $
-                    pkg : Map.keys depsDirect
-                    ++ Map.keys depsTrans
-                    ++ Map.keys testDirect
-                    ++ Map.keys testTrans
+            do  badNames <- filterM isBadElm (pkg : Map.keys old)
                 lift $ Task.throw (Exit.Install (E.NoSolution badNames))
 
 
-toAppAnswerHelp :: Pkg.Name -> Project.AppInfo -> Solver.Solver AppAnswer
-toAppAnswerHelp pkg (Project.AppInfo elm srcDirs depsDirect depsTrans testDirect testTrans) =
+addToAppHelp :: Pkg.Name -> Project.AppInfo -> Solver.Solver (Map.Map Pkg.Name Pkg.Version)
+addToAppHelp pkg (Project.AppInfo _ _ deps tests trans) =
   let
     directs =
-      Map.union depsDirect testDirect
+      Map.union deps tests
 
-    directAndTrans =
-      Map.union directs (Map.union depsTrans testTrans)
+    everything =
+      Map.union directs trans
 
-    try toConstraint deps =
-      do  solution <- Solver.solve $ Map.insert pkg Con.anything (Map.map toConstraint deps)
-          let newDepsDirect = Map.intersection solution (Map.insert pkg Pkg.dummyVersion depsDirect)
-          newDeps <- lift $ foldM (collectTransitive solution) Map.empty (Map.keys newDepsDirect)
-          return $
-            AppAnswer
-              { _old = directAndTrans
-              , _new = solution
-              , _info =
-                  Project.AppInfo
-                    elm
-                    srcDirs
-                    newDepsDirect
-                    (Map.difference newDeps newDepsDirect)
-                    (Map.intersection solution testDirect)
-                    (Map.difference (Map.difference solution newDeps) testDirect)
-              }
+    try constraints =
+      Solver.solve $ Map.insert pkg Con.anything constraints
   in
-  msum
-    [ try Con.exactly directAndTrans
-    , try Con.exactly directs
-    , try Con.untilNextMinor directs
-    , try Con.untilNextMajor directs
-    , try (\_ -> Con.anything) directs
-    ]
-
-
-collectTransitive
-  :: Map.Map Pkg.Name Pkg.Version
-  -> Map.Map Pkg.Name Pkg.Version
-  -> Pkg.Name
-  -> Explorer (Map.Map Pkg.Name Pkg.Version)
-collectTransitive solution state name =
-  do  let version = solution ! name
-      (Explorer.Info _ trans) <- Explorer.getConstraints name version
-      foldM
-        (collectTransitive solution)
-        (Map.insert name version state)
-        (Map.keys trans)
-
-
+    msum $ map try $
+      [ Map.map Con.exactly everything
+      , Map.map Con.exactly directs
+      , Map.map Con.untilNextMinor directs
+      , Map.map Con.untilNextMajor directs
+      , Map.map (\_ -> Con.anything) directs
+      ]
 
 
 
@@ -365,7 +320,7 @@ viewNonZero title entries =
   else
     [ ""
     , D.fromString title
-    , D.indent 2 (D.vcat entries)
+    , D.indent 2 (D.vcat (reverse entries))
     ]
 
 

@@ -15,11 +15,12 @@ import Elm.Error as Error
 
 
 main =
-  Browser.document
-    { init = \flags -> (D.decodeValue Error.decoder flags, Cmd.none)
+  Browser.fullscreen
+    { init = \env -> (D.decodeValue Error.decoder env.flags, Cmd.none)
     , update = \_ exit -> (exit, Cmd.none)
     , view = view
     , subscriptions = \_ -> Sub.none
+    , onNavigation = Nothing
     }
 
 
@@ -27,7 +28,7 @@ main =
 -- VIEW
 
 
-view : Result D.Error Error.Error -> Browser.Document msg
+view : Result D.Error Error.Error -> Browser.Page msg
 view result =
   { title = "Problem!"
   , body =

@@ -23,11 +23,12 @@ import Index.Skeleton as Skeleton
 
 main : Program D.Value Model Never
 main =
-  Browser.document
-    { init = \flags -> (D.decodeValue decoder flags, Cmd.none)
+  Browser.fullscreen
+    { init = \env -> (D.decodeValue decoder env.flags, Cmd.none)
     , update = \_ model -> (model, Cmd.none)
     , subscriptions = \_ -> Sub.none
     , view = view
+    , onNavigation = Nothing
     }
 
 
@@ -87,7 +88,7 @@ type alias Model =
 -- VIEW
 
 
-view : Model -> Browser.Document msg
+view : Model -> Browser.Page msg
 view model =
   case model of
     Err error ->
@@ -140,10 +141,7 @@ viewFiles : List String -> List File -> Html msg
 viewFiles dirs files =
   Skeleton.box
     { title = "File Navigation"
-    , items =
-        List.filterMap viewDir (List.sort dirs)
-        ++
-        List.filterMap viewFile (List.sortBy .name files)
+    , items = List.filterMap viewDir dirs ++ List.filterMap viewFile files
     , footer = Nothing
     }
 

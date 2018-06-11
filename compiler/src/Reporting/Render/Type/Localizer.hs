@@ -3,7 +3,6 @@
 module Reporting.Render.Type.Localizer
   ( Localizer
   , toDoc
-  , toString
   , empty
   , fromNames
   , fromModule
@@ -17,7 +16,6 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import qualified AST.Source as Src
-import qualified AST.Module.Name as ModuleName
 import qualified AST.Valid as Valid
 import qualified Elm.Compiler.Imports as Imports
 import qualified Elm.Name as N
@@ -56,27 +54,22 @@ empty =
 -- LOCALIZE
 
 
-toDoc :: Localizer -> ModuleName.Canonical -> N.Name -> D.Doc
-toDoc localizer home name =
-  D.fromString (toString localizer home name)
-
-
-toString :: Localizer -> ModuleName.Canonical -> N.Name -> String
-toString (Localizer localizer) (ModuleName.Canonical _ home) name =
+toDoc :: Localizer -> N.Name -> N.Name -> D.Doc
+toDoc (Localizer localizer) home name =
   case Map.lookup home localizer of
     Nothing ->
-      N.toString home <> "." <> N.toString name
+      D.fromName home <> "." <> D.fromName name
 
     Just (Import alias exposing) ->
       case exposing of
         All ->
-          N.toString name
+          D.fromName name
 
         Only set ->
           if Set.member name set then
-            N.toString name
+            D.fromName name
           else
-            N.toString (maybe home id alias) <> "." <> N.toString name
+            D.fromName (maybe home id alias) <> "." <> D.fromName name
 
 
 
