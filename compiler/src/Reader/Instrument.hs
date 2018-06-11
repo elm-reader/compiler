@@ -106,20 +106,32 @@ instrumentTopLevelDef module_ def =
           }
 
     (argVars, argSrcMaps) <- unzip <$> traverse instrumentPattern args
-    let ctxWithVars = addVars (Bag.toList $ Bag.concat argVars) rootCtx
+
+    let
+      allArgVars =
+        Bag.toList $ Bag.concat argVars
+
+      ctxWithVars =
+        addVars (Bag.toList $ Bag.concat argVars) rootCtx
 
     frameId <- freshFrameId rootCtx
     (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
-    let srcMaps = collectOuterFrame frameId region $ combineMany $ bodySrcMap : argSrcMaps
+
+    let
+      instrumentedBody =
+        recordVarsIn allArgVars newBody
+
+      srcMaps =
+        collectOuterFrame frameId region $ combineMany $ bodySrcMap : argSrcMaps
 
     let
       newDef =
         case def of
           Can.Def _ _ _ ->
-            Can.Def name args newBody
+            Can.Def name args instrumentedBody
 
           Can.TypedDef _ freeVars typedArgs _ retType ->
-            Can.TypedDef name freeVars typedArgs newBody retType
+            Can.TypedDef name freeVars typedArgs instrumentedBody retType
 
     return (newDef, srcMaps)
 
@@ -217,12 +229,19 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
     Can.Lambda args body ->
       do
         (argVars, argSrcMaps) <- unzip <$> traverse instrumentPattern args
-        let ctxWithVars = addVars (Bag.toList $ Bag.concat argVars) ctx
+
+        let
+          allArgVars =
+            Bag.toList $ Bag.concat argVars
+
+          ctxWithVars =
+            addVars allArgVars ctx
 
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
         -- TODO: Record calls from the perspective of the callee
 
         frameId <- freshFrameId ctx
+
 
         let
           frameSrcMaps =
@@ -231,9 +250,11 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
           lambdaSrcMap =
             makeExprRegion exprId region
 
+          -- TODO: Determine variables captured from enclosing scope and record them along with
+          -- arguments at the beginning of the frame.
           newLambda =
             recordExpr exprId $
-            A.At region $ Can.Lambda args newBody
+            A.At region $ Can.Lambda args $ recordVarsIn allArgVars newBody
 
         return (newLambda, combine frameSrcMaps lambdaSrcMap)
 
@@ -305,29 +326,37 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
     Can.Let def body ->
       do
         varId <- freshExprId
-        (newDef, defSrcMap) <- instrumentDef ctx exprId def
+        (newDef, defSrcMap) <- instrumentDef ctx varId def
 
-        let ctxWithVar = addVar (defName def) varId ctx
+        let varName = defName def
+        let ctxWithVar = addVar varName varId ctx
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVar body
-        -- TODO: Record newly bound variable
 
-        let newLet = A.At region $ Can.Let newDef newBody
+        let
+          newLet =
+            A.At region $ Can.Let newDef $ recordVarsIn [(varName, varId)] newBody
+
         return (newLet, combine defSrcMap bodySrcMap)
 
     Can.LetRec defs body ->
       do
         varIds <- replicateM (length defs) freshExprId
-        let ctxWithVars = addVars (zip (map defName defs) varIds) ctx
+
+        let
+          vars =
+            zip (map defName defs) varIds
+
+          ctxWithVars =
+            addVars vars ctx
 
         (newDefs, defSrcMaps) <-
           unzip <$> sequence (zipWith (instrumentDef ctxWithVars) varIds defs)
 
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
-        -- TODO: Record newly bound variables
 
         let
           newLetRec =
-            A.At region $ Can.LetRec newDefs newBody
+            A.At region $ Can.LetRec newDefs $ recordVarsIn vars newBody
 
           srcMap =
             combineMany $ bodySrcMap : defSrcMaps
@@ -341,11 +370,10 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let ctxWithVars = addVars (Bag.toList patVars) ctx
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
-        -- TODO: Record newly bound variables
 
         let
           newLetDestruct =
-            A.At region $ Can.LetDestruct pat newVal newBody
+            A.At region $ Can.LetDestruct pat newVal $ recordVarsIn (Bag.toList patVars) newBody
 
           srcMap =
             combine patSrcMap $ combine valSrcMap bodySrcMap
@@ -360,8 +388,15 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
               (patVars, patSrcMap) <- instrumentPattern pat
               let ctxWithVars = addVars (Bag.toList patVars) ctx
               (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
-              -- TODO: Record newly bound variables
-              return (Can.CaseBranch pat newBody, combine patSrcMap bodySrcMap)
+
+              let
+                newBranch =
+                  Can.CaseBranch pat $ recordVarsIn (Bag.toList patVars) newBody
+
+                srcMap =
+                  combine patSrcMap bodySrcMap
+
+              return (newBranch, srcMap)
 
         (newVal, valSrcMap) <- instrumentExpr ctx val
 
@@ -616,6 +651,20 @@ instrumentPattern (A.At region pat) =
 recordExpr :: SrcMap.ExprId -> Can.Expr -> Can.Expr
 recordExpr (SrcMap.ExprId index) wrapped =
   A.At R.zero $ Can.Call Hooks.recordExpr [A.At R.zero $ Can.Int index, wrapped]
+
+
+elmSeq :: Can.Expr -> Can.Expr -> Can.Expr
+elmSeq sideEffect expr =
+  A.At R.zero $ Can.Call Hooks.seq [sideEffect, expr]
+
+
+recordVarsIn :: [(N.Name, SrcMap.ExprId)] -> Can.Expr -> Can.Expr
+recordVarsIn vars body =
+  let
+    recordVarIn (name, varId) rest =
+      elmSeq (recordExpr varId $ A.At R.zero $ Can.VarLocal name) rest
+  in
+    foldr recordVarIn body vars
 
 
 

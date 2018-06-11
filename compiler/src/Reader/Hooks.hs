@@ -2,9 +2,11 @@
 
 module Reader.Hooks
   ( recordExpr
+  , seq
   ) where
 
 
+import Prelude hiding (seq)
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 
@@ -44,3 +46,15 @@ recordExpr =
   Can.TLambda (Can.TType ModuleName.basics N.int []) $
   Can.TLambda (Can.TVar $ N.fromText "a") $
   Can.TVar (N.fromText "a")
+
+
+{-# NOINLINE seq #-}
+-- Semantically, `seq` is just `always identity`, but we want to implement it in kernel code to
+-- avoid any possibility of a present or future function inliner beta-reducing our side effects into
+-- oblivion.
+seq :: Can.Expr
+seq =
+  symbol "seq" ["a", "b"] $
+  Can.TLambda (Can.TVar $ N.fromText "a") $
+  Can.TLambda (Can.TVar $ N.fromText "b") $
+  Can.TVar (N.fromText "b")
