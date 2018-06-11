@@ -199,6 +199,7 @@ Executable elm
         Parse.Repl
         Parse.Shader
         Parse.Type
+        Reader.Hooks
         Reader.Instrument
         Reader.SourceMap
         Reporting.Annotation

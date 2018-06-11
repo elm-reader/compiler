@@ -8,6 +8,7 @@ module AST.Module.Name
   , virtualDom, debug, bitwise
   , jsonDecode, jsonEncode
   , webgl, texture, vector2, vector3, vector4, matrix4
+  , reader
   , isKernel, getKernel, canonicalIsKernel
   )
   where
@@ -175,6 +176,15 @@ vector4 = Canonical Pkg.linearAlgebra "Math.Vector4"
 {-# NOINLINE matrix4 #-}
 matrix4 :: Canonical
 matrix4 = Canonical Pkg.linearAlgebra "Math.Matrix4"
+
+
+
+-- READER
+
+
+{-# NOINLINE reader #-}
+reader :: Canonical
+reader = Canonical Pkg.reader "Reader"
 
 
 
