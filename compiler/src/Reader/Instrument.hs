@@ -1,6 +1,9 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+-- Temporary:
+{-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
+
 module Reader.Instrument
   ( instrument
   )
@@ -15,6 +18,7 @@ import qualified Control.Monad.State as State
 import qualified Data.Bag as Bag
 import qualified Data.List as List
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 
 import qualified AST.Canonical as Can
 import qualified AST.Module.Name as ModuleName
@@ -827,6 +831,127 @@ freshExprId =
     let index = _exprCount s
     State.put $ s { _exprCount = index + 1 }
     return $ SrcMap.ExprId index
+
+
+
+-- DETERMINE VARIABLES USED
+
+
+varsUsed :: Can.Expr -> Set.Set N.Name
+varsUsed root =
+  let
+    exprVars :: Can.Expr -> Bag.Bag N.Name
+    exprVars (A.At _ expr) =
+      case expr of
+        Can.VarLocal name ->
+          Bag.one name
+
+        Can.List items ->
+          Bag.concat $ map exprVars items
+
+        Can.Negate wrapped ->
+          exprVars wrapped
+
+        Can.Binop _ _ _ _ left right ->
+          Bag.append (exprVars left) (exprVars right)
+
+        Can.Lambda args body ->
+          Bag.concat $ exprVars body : map patternVars args
+
+        Can.Call func args ->
+          Bag.concat $ exprVars func : map exprVars args
+
+        Can.If branches finally ->
+          let
+            branchVars (condition, branch) =
+              Bag.append (exprVars condition) (exprVars branch)
+          in
+            Bag.concat $ exprVars finally : map branchVars branches
+
+        Can.Let def body ->
+          Bag.append (defVars def) (exprVars body)
+
+        Can.LetRec defs body ->
+          Bag.concat $ exprVars body : map defVars defs
+
+        Can.LetDestruct pat val body ->
+          Bag.append (patternVars pat) $ Bag.append (exprVars val) (exprVars body)
+
+        Can.Case val branches ->
+          let
+            branchVars (Can.CaseBranch pat body) =
+              Bag.append (patternVars pat) (exprVars body)
+          in
+            Bag.concat $ exprVars val : map branchVars branches
+
+        Can.Access record _ ->
+          exprVars record
+
+        Can.Update _ record updates ->
+          let
+            updateVars (Can.FieldUpdate _ val) =
+              exprVars val
+          in
+            Bag.concat $ exprVars record : map (updateVars . snd) (Map.toList updates)
+
+        Can.Record fields ->
+          Bag.concat $ map (exprVars . snd) $ Map.toList fields
+
+        Can.Tuple a b maybeC ->
+          let
+            cVars =
+              case maybeC of
+                Just c ->
+                  exprVars c
+
+                Nothing ->
+                  Bag.empty
+          in
+            Bag.append (exprVars a) $ Bag.append (exprVars b) cVars
+
+        _ ->
+          Bag.empty
+
+    patternVars (A.At _ pat) =
+      case pat of
+        Can.PVar name ->
+          Bag.one name
+
+        Can.PRecord names ->
+          Bag.fromList A.toValue names
+
+        Can.PAlias wrapped name ->
+          Bag.append (patternVars wrapped) $ Bag.one name
+
+        Can.PList items ->
+          Bag.concat $ map patternVars items
+
+        Can.PCons x xs ->
+          Bag.append (patternVars x) (patternVars xs)
+
+        Can.PCtor { Can._p_args = args } ->
+          let
+            argVars (Can.PatternCtorArg _ _ arg) =
+              patternVars arg
+          in
+            Bag.concat $ map argVars args
+
+        _ ->
+          Bag.empty
+
+    defVars def =
+      let
+        (name, args, body) =
+          case def of
+            Can.Def name_ args_ body_ ->
+              (name_, args_, body_)
+
+            Can.TypedDef name_ _ args_ body_ _ ->
+              (name_, map fst args_, body_)
+      in
+        Bag.concat $ Bag.one (A.toValue name) : exprVars body : map patternVars args
+  in
+    Set.fromList $ Bag.toList $ exprVars root
 
 
 
