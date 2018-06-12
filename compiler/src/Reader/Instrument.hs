@@ -1,6 +1,9 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 
+-- Temporary:
+{-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
+
 module Reader.Instrument
   ( instrument
   )
@@ -11,11 +14,13 @@ import Text.Show.Pretty (ppShow)
 import Debug.Trace (trace)
 
 import Control.Monad (replicateM)
+import Data.Monoid ((<>))
 import qualified Control.Monad.State as State
 import qualified Data.Bag as Bag
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.Text as Text
 
 import qualified AST.Canonical as Can
 import qualified AST.Module.Name as ModuleName
@@ -85,27 +90,31 @@ instrumentDecls home decls =
 
 instrumentTopLevelDef :: ModuleName.Canonical -> Can.Def -> (Can.Def, Bag.Bag (SrcMap.FrameId, SrcMap.Frame))
 instrumentTopLevelDef home def =
-  runWithIdState $ do
-    let
-      (name, args, body) =
-        -- Underscores suffixes avoid -Wall shadowing warnings
-        case def of
-          Can.Def name_ args_ body_ ->
-            (name_, args_, body_)
+  let
+    (name, args, body) =
+      -- Underscore suffixes avoid -Wall shadowing warnings
+      case def of
+        Can.Def name_ args_ body_ ->
+          (name_, args_, body_)
 
-          Can.TypedDef name_ _ args_ body_ _ ->
-            (name_, map fst args_, body_)
+        Can.TypedDef name_ _ args_ body_ _ ->
+          (name_, map fst args_, body_)
 
-      region =
-        R.merge (A.toRegion name) (A.toRegion body)
+    forbiddenVars =
+      -- Generate a fake expression equivalent to this binding to find all variables used
+      varsUsed $ A.At R.zero $ Can.Lambda args body
 
-      rootCtx =
-        Context
-          { _moduleName = home
-          , _defName = A.toValue name
-          , _varIds = Map.empty
-          }
+    region =
+      R.merge (A.toRegion name) (A.toRegion body)
 
+    rootCtx =
+      Context
+        { _moduleName = home
+        , _defName = A.toValue name
+        , _varIds = Map.empty
+        }
+  in
+  runWithIdState forbiddenVars $ do
     (argVars, argSrcMaps) <- unzip <$> traverse instrumentPattern args
 
     let
@@ -802,6 +811,7 @@ data IdState =
   IdState
     { _frameCount :: Int
     , _exprCount :: Int
+    , _hygienicVars :: [N.Name] -- Infinite stream
     }
 
 
@@ -809,9 +819,19 @@ type WithIdState a =
   State.State IdState a
 
 
-runWithIdState :: WithIdState a -> a
-runWithIdState =
-  flip State.evalState $ IdState 0 0
+runWithIdState :: Set.Set N.Name -> WithIdState a -> a
+runWithIdState forbiddenVars =
+  let
+    candidateVar i =
+      N.fromText $ "temp" <> Text.pack (show i)
+
+    candidateVars =
+      map candidateVar [0 :: Int ..]
+
+    hygienicVars =
+      filter (flip Set.notMember forbiddenVars) candidateVars
+  in
+    flip State.evalState $ IdState 0 0 hygienicVars
 
 
 freshFrameIndex :: WithIdState Int
@@ -830,6 +850,15 @@ freshExprId =
     let index = _exprCount s
     State.put $ s { _exprCount = index + 1 }
     return $ SrcMap.ExprId index
+
+
+freshHygienicVar :: WithIdState N.Name
+freshHygienicVar =
+  do
+    s <- State.get
+    let (var : rest) = _hygienicVars s
+    State.put $ s { _hygienicVars = rest }
+    return var
 
 
 
