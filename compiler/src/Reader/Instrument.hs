@@ -1,9 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- Temporary:
-{-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
-
 module Reader.Instrument
   ( instrument
   )
@@ -254,11 +251,13 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
           lambdaSrcMap =
             makeExprRegion exprId region
 
-          -- TODO: Determine variables captured from enclosing scope and record them along with
-          -- arguments at the beginning of the frame.
+          captures =
+            Map.toList $ Map.restrictKeys (_varIds ctx) $ varsUsed body
+
           newLambda =
             recordExpr exprId $
-            A.At region $ Can.Lambda args $ recordVarsIn allArgVars newBody
+            A.At region $ Can.Lambda args $
+            recordVarsIn captures $ recordVarsIn allArgVars newBody
 
         return (newLambda, combine frameSrcMaps lambdaSrcMap)
 
