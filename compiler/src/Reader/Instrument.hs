@@ -87,20 +87,12 @@ instrumentDecls home decls =
 
 instrumentTopLevelDef :: ModuleName.Canonical -> Can.Def -> (Can.Def, Bag.Bag (SrcMap.FrameId, SrcMap.Frame))
 instrumentTopLevelDef home def =
-  -- TODO: Instrument like lambdas
   let
-    (name, args, body) =
-      -- Underscore suffixes avoid -Wall shadowing warnings
-      case def of
-        Can.Def name_ args_ body_ ->
-          (name_, args_, body_)
-
-        Can.TypedDef name_ _ args_ body_ _ ->
-          (name_, map fst args_, body_)
+    (name, body, typeInfo, isLambda) =
+      normalizeDef def
 
     forbiddenVars =
-      -- Generate a fake expression equivalent to this binding to find all variables used
-      varsUsed $ A.At R.zero $ Can.Lambda args body
+      varsUsed body
 
     region =
       R.merge (A.toRegion name) (A.toRegion body)
@@ -113,35 +105,24 @@ instrumentTopLevelDef home def =
         }
   in
   runWithIdState forbiddenVars $ do
-    (argVars, argSrcMaps) <- unzip <$> traverse instrumentPattern args
+    (newBody, bodySrcMaps) <- instrumentExpr rootCtx body
 
-    let
-      allArgVars =
-        Bag.toList $ Bag.concat argVars
+    (framedBody, frames) <-
+      case isLambda of
+        NoLambda ->
+          do
+            frameId <- freshFrameId rootCtx
+            return $
+              ( recordFrame frameId newBody
+              , collectOuterFrame frameId region bodySrcMaps
+              )
 
-      ctxWithVars =
-        addVars (Bag.toList $ Bag.concat argVars) rootCtx
+        YesLambda ->
+          return (newBody, _frames bodySrcMaps)
 
-    frameId <- freshFrameId rootCtx
-    (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
+    let newDef = rebuildDef name framedBody typeInfo
 
-    let
-      instrumentedBody =
-        recordVarsIn allArgVars newBody
-
-      srcMaps =
-        collectOuterFrame frameId region $ combineMany $ bodySrcMap : argSrcMaps
-
-    let
-      newDef =
-        case def of
-          Can.Def _ _ _ ->
-            Can.Def name args instrumentedBody
-
-          Can.TypedDef _ freeVars typedArgs _ retType ->
-            Can.TypedDef name freeVars typedArgs instrumentedBody retType
-
-    return (newDef, srcMaps)
+    return (newDef, frames)
 
 
 instrumentExpr :: Context -> Can.Expr -> WithIdState (Can.Expr, Answers)
@@ -512,50 +493,25 @@ instrumentDef :: Context -> SrcMap.ExprId -> Can.Def -> WithIdState (Can.Def, An
 instrumentDef ctx exprId def =
   do
     let
-      -- Convert definitions with parameters into lambda assignments
-      (name, body, typeInfo, nameSrcMap) =
-        case def of
-          Can.Def name_ [] body_ ->
-            (name_, body_, Nothing, makeExprRegion exprId $ A.toRegion name_)
+      (name, body, typeInfo, isLambda) =
+        normalizeDef def
 
-          Can.TypedDef name_ freeVars [] body_ typeAnnot ->
-            (name_, body_, Just (freeVars, typeAnnot), makeExprRegion exprId $ A.toRegion name_)
+      nameSrcMap =
+        case isLambda of
+          NoLambda ->
+            makeExprRegion exprId $ A.toRegion name
 
-          Can.Def name_ args body_ ->
-            let
-              funcRegion =
-                R.merge (A.toRegion name_) (A.toRegion body_)
-
-              func =
-                A.At funcRegion $ Can.Lambda args body_
-            in
-              (name_, func, Nothing, noAnswers)
-
-          Can.TypedDef name_ freeVars args body_ retType ->
-            let
-              funcRegion =
-                R.merge (A.toRegion name_) (A.toRegion body_)
-
-              func =
-                A.At funcRegion $ Can.Lambda (map fst args) body_
-
-              funcType =
-                foldr Can.TLambda retType $ map snd args
-            in
-              (name_, func, Just (freeVars, funcType), noAnswers)
+          YesLambda ->
+            noAnswers
 
     (newBody, bodySrcMap) <- instrumentExprWithId ctx exprId body
 
     let
+      defSrcMap =
+        combine nameSrcMap bodySrcMap
+
       newDef =
-        case typeInfo of
-          Nothing ->
-            Can.Def name [] newBody
-
-          Just (freeVars, typeAnnot) ->
-            Can.TypedDef name freeVars [] newBody typeAnnot
-
-      defSrcMap = combine nameSrcMap bodySrcMap
+        rebuildDef name newBody typeInfo
 
     return (newDef, defSrcMap)
 
@@ -1032,3 +988,50 @@ defName def =
 
     Can.TypedDef (A.At _ name) _ _ _ _ ->
       name
+
+
+data IsLambda = NoLambda | YesLambda
+
+
+-- Convert definitions with parameters into lambda assignments
+normalizeDef :: Can.Def -> (A.Located N.Name, Can.Expr, Maybe (Can.FreeVars, Can.Type), IsLambda)
+normalizeDef def =
+  case def of
+    Can.Def name [] body ->
+      (name, body, Nothing, NoLambda)
+
+    Can.TypedDef name freeVars [] body typeAnnot ->
+      (name, body, Just (freeVars, typeAnnot), NoLambda)
+
+    Can.Def name args body ->
+      let
+        funcRegion =
+          R.merge (A.toRegion name) (A.toRegion body)
+
+        func =
+          A.At funcRegion $ Can.Lambda args body
+      in
+        (name, func, Nothing, YesLambda)
+
+    Can.TypedDef name freeVars args body retType ->
+      let
+        funcRegion =
+          R.merge (A.toRegion name) (A.toRegion body)
+
+        func =
+          A.At funcRegion $ Can.Lambda (map fst args) body
+
+        funcType =
+          foldr Can.TLambda retType $ map snd args
+      in
+        (name, func, Just (freeVars, funcType), YesLambda)
+
+
+rebuildDef :: A.Located N.Name -> Can.Expr -> Maybe (Can.FreeVars, Can.Type) -> Can.Def
+rebuildDef name body typeInfo =
+  case typeInfo of
+    Nothing ->
+      Can.Def name [] body
+
+    Just (freeVars, typeAnnot) ->
+      Can.TypedDef name freeVars [] body typeAnnot
