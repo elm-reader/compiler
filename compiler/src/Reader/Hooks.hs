@@ -2,6 +2,7 @@
 
 module Reader.Hooks
   ( recordExpr
+  , recordCall
   , seq
   ) where
 
@@ -46,6 +47,16 @@ recordExpr =
   Can.TLambda (Can.TType ModuleName.basics N.int []) $
   Can.TLambda (Can.TVar $ N.fromText "a") $
   Can.TVar (N.fromText "a")
+
+
+{-# NOINLINE recordCall #-}
+recordCall :: Can.Expr
+recordCall =
+  symbol "recordCall" ["a", "b", "c"] $
+  Can.TLambda (Can.TType ModuleName.basics N.int []) $
+  Can.TLambda (Can.TLambda (Can.TVar $ N.fromText "a") (Can.TVar $ N.fromText "b")) $
+  Can.TLambda (Can.TLambda Can.TUnit (Can.TVar $ N.fromText "c")) $
+  Can.TVar $ N.fromText "c"
 
 
 {-# NOINLINE seq #-}

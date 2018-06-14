@@ -303,13 +303,9 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         (newArgs, argSrcMaps) <- unzip <$> traverse (instrumentExpr ctx) args
 
-        let
-          callSrcMap =
-            makeExprRegion exprId region
+        newCall <- recordCall exprId newFunc newArgs
 
-          newCall =
-            -- TODO: Record calls from the perspective of the caller
-            A.At region $ Can.Call newFunc newArgs
+        let callSrcMap = makeExprRegion exprId region
 
         return (newCall, combineMany $ callSrcMap : funcSrcMap : argSrcMaps)
 
@@ -677,6 +673,31 @@ recordVarsIn vars body =
       elmSeq (recordExpr varId $ A.At R.zero $ Can.VarLocal name) rest
   in
     foldr recordVarIn body vars
+
+
+recordCall :: SrcMap.ExprId -> Can.Expr -> [Can.Expr] -> WithIdState Can.Expr
+recordCall (SrcMap.ExprId index) func args =
+  do
+    tempVar <- freshHygienicVar
+
+    let
+      tempVarDef =
+        Can.Def (A.At R.zero tempVar) [] func
+
+      tempVarExpr =
+        A.At R.zero $ Can.VarLocal tempVar
+
+      callLambda =
+        A.At R.zero $ Can.Lambda [A.At R.zero Can.PUnit] $
+        A.At R.zero $ Can.Call tempVarExpr args
+
+      exprId =
+        A.At R.zero $ Can.Int index
+
+      recordedCall =
+        A.At R.zero $ Can.Call Hooks.recordCall [exprId, tempVarExpr, callLambda]
+
+    return $ A.At R.zero $ Can.Let tempVarDef recordedCall
 
 
 
