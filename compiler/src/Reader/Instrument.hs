@@ -1,9 +1,6 @@
 {-# OPTIONS_GHC -Wall #-}
 {-# LANGUAGE OverloadedStrings #-}
 
--- Temporary:
-{-# OPTIONS_GHC -fno-warn-unused-top-binds #-}
-
 module Reader.Instrument
   ( instrument
   )
@@ -90,6 +87,7 @@ instrumentDecls home decls =
 
 instrumentTopLevelDef :: ModuleName.Canonical -> Can.Def -> (Can.Def, Bag.Bag (SrcMap.FrameId, SrcMap.Frame))
 instrumentTopLevelDef home def =
+  -- TODO: Instrument like lambdas
   let
     (name, args, body) =
       -- Underscore suffixes avoid -Wall shadowing warnings
@@ -248,10 +246,8 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             addVars allArgVars ctx
 
         (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
-        -- TODO: Record calls from the perspective of the callee
 
         frameId <- freshFrameId ctx
-
 
         let
           frameSrcMaps =
@@ -265,8 +261,12 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
           newLambda =
             recordExpr exprId $
+            markInstrumented $
             A.At region $ Can.Lambda args $
-            recordVarsIn captures $ recordVarsIn allArgVars newBody
+            recordFrame frameId $
+            recordVarsIn captures $
+            recordVarsIn allArgVars $
+            newBody
 
         return (newLambda, combine frameSrcMaps lambdaSrcMap)
 
@@ -698,6 +698,23 @@ recordCall (SrcMap.ExprId index) func args =
         A.At R.zero $ Can.Call Hooks.recordCall [exprId, tempVarExpr, callLambda]
 
     return $ A.At R.zero $ Can.Let tempVarDef recordedCall
+
+
+recordFrame :: SrcMap.FrameId -> Can.Expr -> Can.Expr
+recordFrame frameId body =
+  let
+    bodyLambda =
+      A.At R.zero $ Can.Lambda [A.At R.zero Can.PUnit] body
+
+    frameStr =
+      A.At R.zero $ Can.Str $ SrcMap.frameIdToText frameId
+  in
+    A.At R.zero $ Can.Call Hooks.recordFrame [frameStr, bodyLambda]
+
+
+markInstrumented :: Can.Expr -> Can.Expr
+markInstrumented lam =
+  A.At R.zero $ Can.Call Hooks.markInstrumented [lam]
 
 
 

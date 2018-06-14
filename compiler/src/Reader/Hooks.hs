@@ -3,6 +3,8 @@
 module Reader.Hooks
   ( recordExpr
   , recordCall
+  , recordFrame
+  , markInstrumented
   , seq
   ) where
 
@@ -57,6 +59,23 @@ recordCall =
   Can.TLambda (Can.TLambda (Can.TVar $ N.fromText "a") (Can.TVar $ N.fromText "b")) $
   Can.TLambda (Can.TLambda Can.TUnit (Can.TVar $ N.fromText "c")) $
   Can.TVar $ N.fromText "c"
+
+
+{-# NOINLINE recordFrame #-}
+recordFrame :: Can.Expr
+recordFrame =
+  symbol "recordFrame" ["a"] $
+  Can.TLambda (Can.TType ModuleName.basics N.string []) $
+  Can.TLambda (Can.TLambda Can.TUnit (Can.TVar $ N.fromText "a")) $
+  Can.TVar $ N.fromText "a"
+
+
+{-# NOINLINE markInstrumented #-}
+markInstrumented :: Can.Expr
+markInstrumented =
+  symbol "markInstrumented" ["a", "b"] $
+  Can.TLambda (Can.TLambda (Can.TVar $ N.fromText "a") (Can.TVar $ N.fromText "b")) $
+  Can.TLambda (Can.TVar $ N.fromText "a") (Can.TVar $ N.fromText "b")
 
 
 {-# NOINLINE seq #-}
