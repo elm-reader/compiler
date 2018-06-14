@@ -65,7 +65,7 @@ recordCall =
 recordFrame :: Can.Expr
 recordFrame =
   symbol "recordFrame" ["a"] $
-  Can.TLambda (Can.TType ModuleName.basics N.string []) $
+  Can.TLambda (Can.TType ModuleName.string N.string []) $
   Can.TLambda (Can.TLambda Can.TUnit (Can.TVar $ N.fromText "a")) $
   Can.TVar $ N.fromText "a"
 
