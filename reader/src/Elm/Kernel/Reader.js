@@ -34,12 +34,13 @@ var _Reader_recordCall = F3(function(exprId, func, body)
 {
   if (_Reader_context.$ !== __1_INSTRUMENTED_FRAME)
   {
+    var result = body(__Utils_Tuple0);
     console.warn(
       'Elm Reader: Someone tried to record a function call from a non-instrumented context.',
       'expression id: ', exprId,
-      'value: ', val
+      'value: ', result
     );
-    return body(__Utils_Tuple0);
+    return result;
   }
 
   var newContext;
@@ -68,7 +69,7 @@ var _Reader_recordCall = F3(function(exprId, func, body)
   else
   {
     var newContext = {
-      $: 'Call',
+      $: __1_CALL,
       __childFrame: null,
     };
 
@@ -104,7 +105,7 @@ var _Reader_recordFrame = F2(function(frameId, body)
     __exprs: newContext.__exprs,
   };
 
-  if (_Reader_context.$ === 'Call')
+  if (_Reader_context.$ === __1_CALL)
   {
     _Reader_context.__childFrame = newFrame;
   }
