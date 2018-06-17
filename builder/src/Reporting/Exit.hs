@@ -4,6 +4,7 @@ module Reporting.Exit
   , toString
   , toStderr
   , toJson
+  , toReport
   )
   where
 

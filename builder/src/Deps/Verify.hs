@@ -169,8 +169,8 @@ verifyBuild pkgInfoMVar ifacesMVar name version =
                           putMVar ifacesMVar (Map.union ifacesNow ifaces)
                           return (Ok info)
 
-                    Left _ ->
-                      return (Err name version)
+                    Left exit ->
+                      return (Err name version exit)
 
             report Progress.BuildDepsProgress
             putMVar mvar answer
@@ -185,7 +185,7 @@ verifyBuild pkgInfoMVar ifacesMVar name version =
 data Answer
   = Ok PkgInfo
   | Blocked
-  | Err Name Version
+  | Err Name Version Exit.Exit
 
 
 toInfo :: Name -> Answer -> Task.Task (Maybe PkgInfo)
@@ -197,9 +197,9 @@ toInfo _ answer =
     Blocked ->
       return Nothing
 
-    Err name version ->
+    Err name version exit ->
       do  elmHome <- liftIO PerUserCache.getElmHome
-          throw (E.BuildFailure elmHome name version)
+          throw (E.BuildFailure elmHome name version $ Exit.toReport exit)
 
 
 ifNotBlocked :: Map Name Answer -> (Map Name PkgInfo -> IO Answer) -> IO Answer
@@ -217,7 +217,7 @@ isOk answer =
   case answer of
     Ok info -> Just info
     Blocked -> Nothing
-    Err _ _ -> Nothing
+    Err _ _ _ -> Nothing
 
 
 

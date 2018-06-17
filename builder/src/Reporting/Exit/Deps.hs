@@ -26,7 +26,7 @@ data Exit
   | AppBadElm Pkg.Version
   | AppMissingTrans [(Pkg.Name, Pkg.Version)]
   | BadDeps
-  | BuildFailure FilePath Pkg.Name Pkg.Version
+  | BuildFailure FilePath Pkg.Name Pkg.Version Help.Report
 
 
 
@@ -110,7 +110,7 @@ toReport exit =
             \ you are running into something that seems trickier than this."
         ]
 
-    BuildFailure elmHome pkg vsn ->
+    BuildFailure elmHome pkg vsn depReport ->
       Help.report "CORRUPT DEPENDENCY" Nothing
         "I ran into a problem while building the following package:"
         [ D.indent 4 $ D.red $ D.fromString $ Pkg.toString pkg ++ " " ++ Pkg.versionToString vsn
@@ -119,4 +119,6 @@ toReport exit =
             ,"Try","deleting",D.dullyellow (D.fromString elmHome),"(a","directory","for"
             ,"caching","build","artifacts)","and","see","if","that","resolves","the","issue."
             ]
+        , D.fromString "The problem while building the package was:"
+        , Help.reportToDoc depReport
         ]
