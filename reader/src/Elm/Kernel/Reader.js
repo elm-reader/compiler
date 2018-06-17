@@ -43,7 +43,6 @@ var _Reader_recordCall = F3(function(exprId, func, body)
     return result;
   }
 
-  var newContext;
   if (!body.elmReaderInstrumented)
   {
     var newContext = {
