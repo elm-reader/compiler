@@ -634,26 +634,39 @@ recordVarsIn vars body =
 recordCall :: SrcMap.ExprId -> Can.Expr -> [Can.Expr] -> WithIdState Can.Expr
 recordCall (SrcMap.ExprId index) func args =
   do
-    tempVar <- freshHygienicVar
+    funcVar <- freshHygienicVar
+    argVars <- replicateM (length args) freshHygienicVar
 
     let
-      tempVarDef =
-        Can.Def (A.At R.zero tempVar) [] func
+      tempVarExpr var =
+        A.At R.zero $ Can.VarLocal var
 
-      tempVarExpr =
-        A.At R.zero $ Can.VarLocal tempVar
+      funcVarExpr =
+        tempVarExpr funcVar
+
+      argVarExprs =
+        map tempVarExpr argVars
 
       callLambda =
         A.At R.zero $ Can.Lambda [A.At R.zero Can.PUnit] $
-        A.At R.zero $ Can.Call tempVarExpr args
+        A.At R.zero $ Can.Call funcVarExpr argVarExprs
 
       exprId =
         A.At R.zero $ Can.Int index
 
       recordedCall =
-        A.At R.zero $ Can.Call Hooks.recordCall [exprId, tempVarExpr, callLambda]
+        A.At R.zero $ Can.Call Hooks.recordCall [exprId, funcVarExpr, callLambda]
 
-    return $ A.At R.zero $ Can.Let tempVarDef recordedCall
+      tempDef var val =
+        Can.Def (A.At R.zero var) [] val
+
+      tempDefs =
+        tempDef funcVar func : zipWith tempDef argVars args
+
+      tempLet def body =
+        A.At R.zero $ Can.Let def body
+
+    return $ foldr tempLet recordedCall tempDefs
 
 
 recordFrame :: SrcMap.FrameId -> Can.Expr -> Can.Expr
