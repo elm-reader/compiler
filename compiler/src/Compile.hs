@@ -54,6 +54,10 @@ data Artifacts =
     , _srcMap :: Maybe SrcMap.Module
     }
 
+instance Show Artifacts where
+  show (Artifacts i o _ _) =
+    "Artifacts (interface) (" ++ show o ++ ") (maybe docs) (maybe srcmap)"
+
 
 compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> ReaderFlag -> Result i Artifacts
 compile flag pkg importDict interfaces source reader =
@@ -67,7 +71,7 @@ compile flag pkg importDict interfaces source reader =
       let (canonical, maybeSrcMap) =
             case reader of
               Compile.YesReader ->
-                let (annotated, srcMap) = Instrument.instrument basicCanonical
+                let (annotated, srcMap) = Instrument.instrument source basicCanonical
                 in (annotated, Just srcMap)
 
               Compile.NoReader ->

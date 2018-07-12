@@ -6,6 +6,8 @@ module Generate.JavaScript
   )
   where
 
+import Text.Show.Pretty (ppShow)
+import Debug.Trace (trace)
 
 import Prelude hiding (cycle, print)
 import qualified Data.ByteString.Builder as B
@@ -23,6 +25,7 @@ import qualified AST.Module.Name as ModuleName
 import qualified Data.Index as Index
 import qualified Elm.Interface as I
 import qualified Elm.Name as N
+import qualified Elm.Package as Pkg
 import qualified Generate.JavaScript.Builder as JS
 import qualified Generate.JavaScript.Expression as Expr
 import qualified Generate.JavaScript.Name as Name
@@ -44,20 +47,33 @@ data Output
 generate :: Mode.Mode -> Opt.Graph -> [ModuleName.Canonical] -> Output
 generate mode (Opt.Graph mains graph _fields) roots =
   let
-    rootSet = Set.fromList roots
-    rootMap = Map.restrictKeys mains rootSet
+    permittedSet =
+      if Mode.isReader mode then
+        Set.fromList $ (ModuleName.Canonical Pkg.reader N.reader) : roots
+      else
+        Set.fromList roots
+    okMains = Map.restrictKeys mains permittedSet
   in
-  case map ModuleName._module (Map.keys rootMap) of
+  case map ModuleName._module (setMain mode (Map.keys okMains)) of
     [] ->
       None
 
     name:names ->
       let
-        state = Map.foldrWithKey (addMain mode graph) emptyState rootMap
-        builder = perfNote mode <> stateToBuilder state <> toMainExports mode rootMap
+        state = Map.foldrWithKey (addMain mode graph) emptyState okMains
+        builder = perfNote mode <> stateToBuilder state <> toMainExports mode okMains
       in
       Some name names builder
 
+setMain :: Mode.Mode -> [ModuleName.Canonical] -> [ModuleName.Canonical]
+setMain mode mains =
+  if Mode.isReader mode then
+    let
+      (reader, notReader) = List.partition (\(ModuleName.Canonical pkg _) -> pkg == Pkg.reader) mains
+    in
+    reader ++ notReader
+  else
+    mains
 
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> main -> State -> State
 addMain mode graph home _ state =
@@ -70,12 +86,15 @@ perfNote mode =
     Mode.Prod _ _ ->
       ""
 
-    Mode.Dev _ Nothing ->
+    Mode.Dev _ _ (Just _) ->
+      "console.info('Welcome to the Elm reader, examples view! To run your program normally, remove the --reader flag when compiling.');"
+
+    Mode.Dev _ Nothing _ ->
       "console.warn('Compiled in DEV mode. Follow the advice at "
       <> B.stringUtf8 (D.makeNakedLink "optimize")
       <> " for better performance and smaller assets.');"
 
-    Mode.Dev _ (Just _) ->
+    Mode.Dev _ (Just _) Nothing ->
       "console.warn('Compiled in DEBUG mode. Follow the advice at "
       <> B.stringUtf8 (D.makeNakedLink "optimize")
       <> " for better performance and smaller assets.');"
@@ -164,6 +183,7 @@ addGlobalHelp mode graph global state =
     addDeps deps someState =
       Set.foldl' (addGlobal mode graph) someState deps
   in
+  -- NOTE: this (!) call crashes when a kernel module imports a nonexistent function
   case graph ! global of
     Opt.Define expr deps ->
       addStmt (addDeps deps state) (
@@ -267,7 +287,7 @@ generateCycle mode (Opt.Global home _) names values functions =
               Mode.Prod _ _ ->
                 JS.Block realBlock
 
-              Mode.Dev _ _ ->
+              Mode.Dev _ _ _ ->
                 JS.Try (JS.Block realBlock) Name.dollar $ JS.Throw $ JS.String $
                   "Some top-level definitions from `" <> N.toBuilder (ModuleName._module home) <> "` are causing infinite recursion:\\n"
                   <> drawCycle names
@@ -349,7 +369,7 @@ addChunk mode builder chunk =
 
     Opt.Debug ->
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ ->
           builder
 
         Mode.Prod _ _ ->
@@ -357,7 +377,7 @@ addChunk mode builder chunk =
 
     Opt.Prod ->
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ ->
           "_UNUSED" <> builder
 
         Mode.Prod _ _ ->
@@ -373,7 +393,7 @@ generateEnum mode global@(Opt.Global home name) index =
   let
     definition =
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ ->
           Expr.codeToExpr (Expr.generateCtor mode global index 0)
 
         Mode.Prod _ _ ->
@@ -391,7 +411,7 @@ generateBox mode global@(Opt.Global home name) =
   let
     definition =
       case mode of
-        Mode.Dev _ _ ->
+        Mode.Dev _ _ _ ->
           Expr.codeToExpr (Expr.generateCtor mode global Index.first 1)
 
         Mode.Prod _ _ ->

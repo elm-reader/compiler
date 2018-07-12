@@ -1,8 +1,23 @@
 /*
 
 import Elm.Kernel.Utils exposing (Tuple0)
+import Browser exposing (sandbox)
+import Reader exposing (init, update, view, rawConfig, Model)
 
 */
+
+var _Reader_main = F2(function (decoder, debugData)
+{
+  return __Browser_sandbox({
+    init: A2(
+      __Reader_Model,
+      __Reader_init.count,
+      __Reader_rawConfig(JSON.stringify(debugData)),
+    ),
+    update: __Reader_update,
+    view: __Reader_view
+  })(decoder)(debugData);
+});
 
 var _Reader_context = {
   $: __1_NON_INSTRUMENTED_FRAME,
@@ -86,8 +101,9 @@ var _Reader_recordCall = F3(function(exprId, func, body)
   }
 });
 
-var _Reader_recordFrame = F2(function(frameId, body)
+var _Reader_recordFrame = F2(function(frameIdRaw, body)
 {
+  var frameId = JSON.parse(frameIdRaw);
   var newContext = {
     $: __1_INSTRUMENTED_FRAME,
     __exprs: [],

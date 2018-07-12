@@ -41,18 +41,20 @@ run :: [FilePath] -> Flags -> IO ()
 run paths (Flags debug optimize output report reader docs) =
   do  reporter <- toReporter report
       Task.run reporter $
-        do  mode <- toMode debug optimize
+        do  mode <- toMode debug reader optimize
             summary <- Project.getRoot
             Project.compile mode (toReaderFlag reader) Output.Client output docs summary paths
 
 
-toMode :: Bool -> Bool -> Task.Task Output.Mode
-toMode debug optimize =
-  case (debug, optimize) of
-    (True , True ) -> Task.throw $ Exit.Make E.CannotOptimizeAndDebug
-    (False, True ) -> return Output.Prod
-    (False, False) -> return Output.Dev
-    (True , False) -> return Output.Debug
+toMode :: Bool -> Bool -> Bool -> Task.Task Output.Mode
+toMode debug reader optimize =
+  case (debug, reader, optimize) of
+    (True , _    , True ) -> Task.throw $ Exit.Make E.CannotOptimizeAndDebug
+    -- TODO: can we optimize and read?
+    (False, _    , True ) -> return Output.Prod
+    (_    , True , False) -> return Output.Reader
+    (True , False, False) -> return Output.Debug
+    (False, False, False) -> return Output.Dev
 
 
 toReporter :: Maybe ReportType -> IO Progress.Reporter

@@ -270,7 +270,7 @@ data Version =
     , _minor :: {-# UNPACK #-} !Word16
     , _patch :: {-# UNPACK #-} !Word16
     }
-    deriving (Eq, Ord)
+    deriving (Eq, Ord, Show)
 
 
 initialVersion :: Version

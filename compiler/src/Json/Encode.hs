@@ -15,6 +15,7 @@ module Json.Encode
   , number
   , null
   , dict
+  , mapAsPairs
   , list
   , (==>)
   )
@@ -102,6 +103,19 @@ list encodeEntry entries =
   Array $ map encodeEntry entries
 
 
+
+-- Encodes a map to a JSON array whose elements are of the form:
+-- { <keyName>: <encoded key>, <valName>: <encoded val>> }
+mapAsPairs :: (Text.Text, k -> Value) -> (Text.Text, v -> Value) -> Map.Map k v -> Value
+mapAsPairs (keyName, encodeKey) (valName, encodeVal) m =
+  let
+    encodePair (k, v) =
+      object $
+        [ ( keyName, encodeKey k )
+        , ( valName, encodeVal v )
+        ]
+  in
+  list encodePair (Map.toList m)
 
 -- HELPERS
 

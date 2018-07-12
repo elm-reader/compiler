@@ -1,4 +1,4 @@
-module Calls exposing (main)
+module Calls exposing (call1, call2, constructorCall, explicitlyTyped, implicitlyTyped, listConstructorCall)
 
 import Html exposing (Html, text)
 
@@ -26,8 +26,3 @@ constructorCall =
 
 listConstructorCall =
     5 :: []
-
-
-main : Html a
-main =
-    text "hello"

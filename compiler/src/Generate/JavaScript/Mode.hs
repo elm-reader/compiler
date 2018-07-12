@@ -2,8 +2,10 @@ module Generate.JavaScript.Mode
   ( Mode(..)
   , Target(..)
   , debug
+  , reader
   , dev
   , prod
+  , isReader
   , isDebug
   , isServer
   )
@@ -15,9 +17,11 @@ import qualified Data.Map as Map
 import qualified Data.Maybe as Maybe
 
 import qualified AST.Optimized as Opt
+import qualified AST.Module.Name as ModuleName
 import qualified Elm.Interface as I
 import qualified Elm.Name as N
 import qualified Generate.JavaScript.Name as Name
+import qualified Reader.SourceMap as SrcMap
 
 
 
@@ -25,7 +29,7 @@ import qualified Generate.JavaScript.Name as Name
 
 
 data Mode
-  = Dev Target (Maybe I.Interfaces)
+  = Dev Target (Maybe I.Interfaces) (Maybe (Map.Map ModuleName.Canonical SrcMap.Module))
   | Prod Target ShortFieldNames
 
 
@@ -34,17 +38,33 @@ data Target = Client | Server
 
 debug :: Target -> I.Interfaces -> Mode
 debug target interfaces =
-  Dev target (Just interfaces)
+  Dev target (Just interfaces) Nothing
 
 
 dev :: Target -> Mode
 dev target =
-  Dev target Nothing
+  Dev target Nothing Nothing
+
+
+reader :: Target -> I.Interfaces -> Map.Map ModuleName.Canonical SrcMap.Module -> Mode
+reader target ifaces srcMaps =
+  Dev target (Just ifaces) (Just srcMaps)
 
 
 prod :: Target -> Opt.Graph -> Mode
 prod target (Opt.Graph _ _ fieldCounts) =
   Prod target (shortenFieldNames fieldCounts)
+
+
+
+-- IS READER?
+
+
+isReader :: Mode -> Bool
+isReader mode =
+  case mode of
+    Dev _ _ maybeSrcMaps -> Maybe.isJust maybeSrcMaps
+    Prod _ _ -> False
 
 
 
@@ -54,7 +74,7 @@ prod target (Opt.Graph _ _ fieldCounts) =
 isDebug :: Mode -> Bool
 isDebug mode =
   case mode of
-    Dev _ mi -> Maybe.isJust mi
+    Dev _ mi _ -> Maybe.isJust mi
     Prod _ _ -> False
 
 
@@ -64,7 +84,7 @@ isDebug mode =
 isServer :: Mode -> Bool
 isServer mode =
   case mode of
-    Dev target _ -> isServerHelp target
+    Dev target _ _ -> isServerHelp target
     Prod target _ -> isServerHelp target
 
 

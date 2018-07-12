@@ -14,6 +14,7 @@ import Control.Monad (replicateM)
 import Data.Monoid ((<>))
 import qualified Control.Monad.State as State
 import qualified Data.Bag as Bag
+import qualified Data.ByteString as BS
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -32,9 +33,9 @@ import qualified Reporting.Region as R
 -- INSTRUMENT
 
 
-instrument :: Can.Module -> (Can.Module, SrcMap.Module)
-instrument module_ =
-  let instrumented = instrumentModule module_
+instrument :: BS.ByteString -> Can.Module -> (Can.Module, SrcMap.Module)
+instrument source module_ =
+  let instrumented = instrumentModule source module_
       message =
         "elm-reader debug -- received canonical AST:\n"
         ++ ppShow module_ ++ "\n"
@@ -44,8 +45,8 @@ instrument module_ =
   trace message instrumented
 
 
-instrumentModule :: Can.Module -> (Can.Module, SrcMap.Module)
-instrumentModule module_ =
+instrumentModule :: BS.ByteString -> Can.Module -> (Can.Module, SrcMap.Module)
+instrumentModule source module_ =
   let
     (newDecls, srcMaps) =
       instrumentDecls (Can._name module_) $ Can._decls module_
@@ -53,6 +54,7 @@ instrumentModule module_ =
     modSrcMap =
       SrcMap.Module
         { SrcMap._frames = Map.fromList $ Bag.toList srcMaps
+        , SrcMap._source = source
         }
   in
     (module_ { Can._decls = newDecls }, modSrcMap)

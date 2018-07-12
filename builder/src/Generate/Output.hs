@@ -28,6 +28,8 @@ import qualified Elm.Interface as I
 import qualified Elm.Name as N
 import qualified Elm.Package as Pkg
 
+import qualified Reader.SourceMap as SrcMap
+
 import qualified AST.Module.Name as ModuleName
 import qualified Elm.Project.Json as Project
 import qualified Elm.Project.Summary as Summary
@@ -50,7 +52,7 @@ import Terminal.Args (Parser(..))
 -- GENERATE
 
 
-data Mode = Debug | Dev | Prod
+data Mode = Debug | Reader | Dev | Prod
 
 
 generate
@@ -74,6 +76,10 @@ generate mode target maybeOutput summary graph@(Crawl.Graph args locals _ _ _) a
               Debug ->
                 do  interfaces <- getInterfaces summary locals artifacts
                     return $ Mode.debug target interfaces
+
+              Reader ->
+                do  interfaces <- getInterfaces summary locals artifacts
+                    return $ Mode.reader target interfaces (getSourceMaps summary artifacts)
 
               Dev ->
                 return $ Mode.dev target
@@ -109,6 +115,23 @@ getInterfaces (Summary.Summary root project _ interfaces _) locals artifacts =
         Map.union interfaces $ Map.fromList $
           Map.foldrWithKey addInterface (Map.foldrWithKey addArtifact [] artifacts) cached
 
+
+getSourceMaps
+  :: Summary.Summary
+  -> Map.Map Module.Raw Compiler.Artifacts
+  -> Map.Map Module.Canonical SrcMap.Module
+getSourceMaps (Summary.Summary _ project _ _ _) artifacts =
+  let
+    pkg = Project.getName project
+
+    addSourceMap home (Compiler.Artifacts _ _ _ maybeSrcMap) srcMaps =
+      case maybeSrcMap of
+        Nothing ->
+          srcMaps
+        Just srcMap ->
+          Map.insert (ModuleName.Canonical pkg home) srcMap srcMaps
+  in
+  Map.foldrWithKey addSourceMap Map.empty artifacts
 
 
 -- GENERATE MONOLITH

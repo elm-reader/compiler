@@ -30,6 +30,10 @@ data Error
   | Pattern [Pattern.Error]
   | Docs Docs.Error
 
+-- FIXME
+instance Show Error where
+  show _ = "(Compiler.Error)"
+
 
 
 -- TO REPORT

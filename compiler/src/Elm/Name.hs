@@ -29,7 +29,7 @@ module Elm.Name
   , task, router, cmd, sub, platform, virtualDom
   , shader, debug, debugger, bitwise, basics
   , utils, negate, true, false, value
-  , node, program, main, dollar, identity
+  , node, program, reader, main, dollar, identity
   , replModule
   )
   where
@@ -320,6 +320,11 @@ node = "Node"
 {-# NOINLINE program #-}
 program :: Name
 program = "Program"
+
+
+{-# NOINLINE reader #-}
+reader :: Name
+reader = "Reader"
 
 
 {-# NOINLINE main #-}
