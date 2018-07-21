@@ -1,7 +1,7 @@
 module Reader
     exposing
         ( markInstrumented
-        , rawConfig
+        , parseConfig
         , recordCall
         , recordExpr
         , recordFrame
@@ -12,7 +12,7 @@ module Reader
 
     Reader.
 
-    @docs recordExpr, recordCall, recordFrame, markInstrumented, seq, rawConfig
+    @docs recordExpr, recordCall, recordFrame, markInstrumented, seq, parseConfig
 
 -}
 
@@ -24,6 +24,7 @@ import Html.Attributes exposing (property)
 import Html.Events exposing (onClick)
 import Json.Decode as JD
 import Reader.ProgramConfig as PC
+import Reader.Tracing as Tracing
 
 
 {-| -}
@@ -57,9 +58,9 @@ seq =
 
 
 {-| -}
-rawConfig : String -> PC.Config
-rawConfig =
-    PC.Raw
+parseConfig : String -> Result JD.Error PC.Config
+parseConfig =
+    JD.decodeString PC.decodeConfig
 
 
 main : Program () Model Msg
@@ -72,15 +73,7 @@ main =
 
 
 type alias Model =
-    { count : Int
-    , programConfig : PC.Config
-    }
-
-
-init : Model
-init =
-    { count = 0
-    , programConfig = PC.Raw ""
+    { programConfig : Result JD.Error PC.Config
     }
 
 
@@ -89,31 +82,14 @@ init =
 
 
 type Msg
-    = RIncrement
-    | RDecrement
+    = Msg
 
 
-update : Msg -> Model -> Model
-update msg model =
-    case msg of
-        RIncrement ->
-            { model | count = increment model.count }
-
-        RDecrement ->
-            { model | count = decrement model.count }
-
-
-decrement x =
-    x - 2
-
-
-increment : Int -> Int
-increment x =
-    x + 2
-
-
-reset _ =
-    init.count
+update : Msg -> Model -> ( Model, Cmd Msg )
+update Msg ({ programConfig } as model) =
+    ( model
+    , Cmd.none
+    )
 
 
 
@@ -125,22 +101,14 @@ view model =
     let
         cfg =
             case model.programConfig of
-                (PC.Parsed _ _) as parsed ->
+                Ok parsed ->
                     Debug.toString parsed
 
-                PC.Raw jsonText ->
-                    case JD.decodeString PC.decodeConfig jsonText of
-                        Ok parsed ->
-                            Debug.toString parsed
-
-                        Err e ->
-                            JD.errorToString e
+                Err errMsg ->
+                    JD.errorToString errMsg
     in
     div []
-        [ button [ onClick RDecrement ] [ text "-" ]
-        , div [] [ text (String.fromInt model.count) ]
-        , button [ onClick RIncrement ] [ text "+" ]
-        , pre [] [ text cfg ]
+        [ pre [] [ text cfg ]
         ]
 
 

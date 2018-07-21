@@ -1,21 +1,29 @@
 /*
 
 import Elm.Kernel.Utils exposing (Tuple0)
-import Browser exposing (sandbox)
-import Reader exposing (init, update, view, rawConfig, Model)
+import Tuple exposing (pair)
+import Browser exposing (element)
+import Platform.Sub as Sub exposing (none)
+import Platform.Cmd as Cmd exposing (none)
+
+import Reader exposing (Model, update, view, parseConfig)
+import Reader.Tracing as Tracing exposing (requestTrace)
 
 */
 
 var _Reader_main = F2(function (decoder, debugData)
 {
-  return __Browser_sandbox({
-    init: A2(
-      __Reader_Model,
-      __Reader_init.count,
-      __Reader_rawConfig(JSON.stringify(debugData)),
-    ),
+  var programData = Object.assign({}, debugData, {traces: _Reader_toHumanReadable(_Reader_context).child_frames});
+  console.info("Program data:", programData);
+  return __Browser_element({
+    init: function () {
+      return A2(__Tuple_pair,
+        __Reader_Model(__Reader_parseConfig(JSON.stringify(programData))),
+        __Cmd_none);
+    },
     update: __Reader_update,
-    view: __Reader_view
+    view: __Reader_view,
+    subscriptions: function () { return __Sub_none; }
   })(decoder)(debugData);
 });
 
@@ -106,7 +114,7 @@ var _Reader_recordFrame = F2(function(frameIdRaw, body)
   var frameId = JSON.parse(frameIdRaw);
   var newContext = {
     $: __1_INSTRUMENTED_FRAME,
-    __exprs: [],
+    __exprs: {},
   };
 
   var oldContext = _Reader_context;
@@ -143,35 +151,42 @@ var _Reader_seq = F2(function(sideEffect, val)
   return val;
 });
 
-// Tools for debugging the debugger from the JavaScript console
+var _Reader_contextJSON = function ()
+{
+  return JSON.stringify(_Reader_toHumanReadable(_Reader_context));
+};
 
 function _Reader_toHumanReadable(frame)
 {
   if (frame.$ === __2_INSTRUMENTED)
   {
+    var readableExprs = [];
+    Object.keys(frame.__exprs).forEach(function (id) {
+      var expr = frame.__exprs[id];
+      readableExprs.push({
+        id: +id,
+        expr: {
+          val: expr.__val,
+          child_frame: expr.__childFrame && _Reader_toHumanReadable(expr.__childFrame),
+        }
+      });
+    });
     return {
       tag: 'Instrumented',
       id: frame.__id,
-      exprs: frame.__exprs.map(function(expr) {
-        var childFrame = null;
-        if (expr.__childFrame !== null) {
-          childFrame = _Reader_toHumanReadable(expr.__childFrame);
-        }
-        return {
-          val: expr.__val,
-          childFrame: childFrame,
-        };
-      }),
+      exprs: readableExprs
     };
   }
   else
   {
     return {
       tag: 'NonInstrumented',
-      childFrames: frame.__childFrames.map(_Reader_toHumanReadable),
+      child_frames: frame.__childFrames.map(_Reader_toHumanReadable),
     };
   }
 }
+
+// Tools for debugging the debugger from the JavaScript console
 
 // Need to export as global to be available from the console
 window.elmReaderRoot = function()

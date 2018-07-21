@@ -27,8 +27,8 @@ ex2 =
     4324
 
 
-mainish : () -> Int
-mainish () =
+mainish : Int
+mainish =
     -- calc GCD of ex1 and ex2
     euclid ex1 ex2
 
@@ -58,7 +58,7 @@ type Whomstery
 toNum whomstery =
     case whomstery of
         Whomsted ->
-            mainish ()
+            mainish
 
         RealNews x ->
             x

@@ -1,6 +1,6 @@
 module Reader.ProgramConfig
     exposing
-        ( Config(..)
+        ( Config
         , ExprId
         , Frame
         , FrameId
@@ -8,7 +8,11 @@ module Reader.ProgramConfig
         , Interfaces
         , SourceMap
         , SourceMaps
+        , TraceData(..)
         , decodeConfig
+        , decodeTraceData
+        , emptyInterfaces
+        , emptySourceMaps
         )
 
 import Json.Decode as JD
@@ -16,33 +20,43 @@ import Reader.Dict as Dict exposing (Dict)
 import Tuple
 
 
-type Config
-    = Raw String
-    | Parsed Interfaces SourceMaps
+-- PROGRAM CONFIG
 
 
-type alias Package =
+type alias Config =
+    { interfaces : Interfaces, sourceMaps : SourceMaps, traceData : TraceData }
+
+
+decodeConfig : JD.Decoder Config
+decodeConfig =
+    JD.map3 Config
+        (JD.field "interfaces" decodeInterfaces)
+        (JD.field "source_maps" decodeSourceMaps)
+        (JD.field "traces" decodeTraceData)
+
+
+type alias PackageId =
     { author : String
     , project : String
     }
 
 
-decodePackage : JD.Decoder Package
+decodePackage : JD.Decoder PackageId
 decodePackage =
-    JD.map2 Package
+    JD.map2 PackageId
         (JD.field "author" JD.string)
         (JD.field "project" JD.string)
 
 
-type alias Module =
-    { package : Package
+type alias ModuleId =
+    { package : PackageId
     , mod : Name
     }
 
 
-decodeModule : JD.Decoder Module
+decodeModule : JD.Decoder ModuleId
 decodeModule =
-    JD.map2 Module
+    JD.map2 ModuleId
         (JD.field "package" decodePackage)
         (JD.field "module" JD.string)
 
@@ -51,19 +65,16 @@ type alias Name =
     String
 
 
-decodeConfig : JD.Decoder Config
-decodeConfig =
-    JD.map2 Parsed
-        (JD.field "interfaces" decodeInterfaces)
-        (JD.field "source_maps" decodeSourceMaps)
-
-
 
 -- INTERFACES
 
 
 type alias Interfaces =
-    Dict Module Interface
+    Dict ModuleId Interface
+
+
+emptyInterfaces =
+    Dict.empty
 
 
 decodeInterfaces =
@@ -79,7 +90,11 @@ type alias Interface =
 
 
 type alias SourceMaps =
-    Dict Module SourceMap
+    Dict ModuleId SourceMap
+
+
+emptySourceMaps =
+    Dict.empty
 
 
 decodeSourceMaps : JD.Decoder SourceMaps
@@ -103,7 +118,7 @@ decodeSourceMap =
 
 
 type alias FrameId =
-    { mod : Module
+    { mod : ModuleId
     , def : Name
     , frameIndex : Int
     }
@@ -120,7 +135,7 @@ decodeFrameId =
 type alias Frame =
     { region : Region
     , exprRegions : Dict ExprId (List Region)
-    , exprNames : Dict ExprId ( Module, Name )
+    , exprNames : Dict ExprId ( ModuleId, Name )
     }
 
 
@@ -190,3 +205,84 @@ decodeDict ( keyName, decodeKey ) ( valName, decodeVal ) =
                 (JD.field valName decodeVal)
     in
     JD.map Dict.fromList (JD.list decodeEntry)
+
+
+
+-- TRACE DATA
+
+
+type TraceData
+    = TraceData (List TraceFrame)
+
+
+decodeTraceData : JD.Decoder TraceData
+decodeTraceData =
+    JD.map TraceData <| JD.list decodeTraceFrame
+
+
+{-| -}
+type TraceFrame
+    = InstrumentedFrame FrameId (Dict ExprId TraceExpr)
+    | NonInstrumentedFrame (List TraceFrame)
+
+
+decodeTraceFrame : JD.Decoder TraceFrame
+decodeTraceFrame =
+    let
+        decFrame =
+            JD.lazy (\() -> decodeTraceFrame)
+
+        decExpr =
+            JD.lazy (\() -> decodeTraceExpr)
+
+        decodeInstrumented =
+            JD.map2 InstrumentedFrame
+                (JD.field "id" decodeFrameId)
+                (JD.field "exprs" <| decodeDict ( "id", decodeExprId ) ( "expr", decExpr ))
+
+        decodeNonInstrumented =
+            JD.map NonInstrumentedFrame
+                (JD.field "child_frames" <| JD.list decFrame)
+    in
+    JD.oneOf [ decodeNonInstrumented, decodeInstrumented ]
+
+
+{-| -}
+type alias TraceExpr =
+    { value : Maybe Value
+    , childFrame : Maybe TraceFrame -- frame that created the expression
+    }
+
+
+decodeTraceExpr : JD.Decoder TraceExpr
+decodeTraceExpr =
+    JD.map2 TraceExpr
+        (JD.maybe <| JD.field "val" decodeValue)
+        (JD.field "child_frame" <| JD.nullable decodeTraceFrame)
+
+
+
+-- An Elm value
+
+
+type Value
+    = Num Float
+    | Str String
+    | Bl Bool
+    | Ctr String (List Value)
+
+
+decodeValue : JD.Decoder Value
+decodeValue =
+    let
+        decodeCtr =
+            JD.map2 Ctr
+                (JD.field "$" JD.string)
+                (JD.succeed [])
+    in
+    JD.oneOf
+        [ JD.map Num JD.float
+        , JD.map Str JD.string
+        , JD.map Bl JD.bool
+        , decodeCtr
+        ]
