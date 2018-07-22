@@ -6,6 +6,7 @@ module Reporting.Region
   , one
   , merge
   , encode
+  , encodePosition
   )
   where
 

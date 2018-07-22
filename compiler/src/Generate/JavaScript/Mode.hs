@@ -29,7 +29,7 @@ import qualified Reader.SourceMap as SrcMap
 
 
 data Mode
-  = Dev Target (Maybe I.Interfaces) (Maybe (Map.Map ModuleName.Canonical SrcMap.Module))
+  = Dev Target (Maybe I.Interfaces) (Maybe SrcMap.Project)
   | Prod Target ShortFieldNames
 
 
@@ -46,9 +46,9 @@ dev target =
   Dev target Nothing Nothing
 
 
-reader :: Target -> I.Interfaces -> Map.Map ModuleName.Canonical SrcMap.Module -> Mode
-reader target ifaces srcMaps =
-  Dev target (Just ifaces) (Just srcMaps)
+reader :: Target -> I.Interfaces -> SrcMap.Project -> Mode
+reader target ifaces srcMap =
+  Dev target (Just ifaces) (Just srcMap)
 
 
 prod :: Target -> Opt.Graph -> Mode

@@ -2,6 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module AST.Module.Name
   ( Canonical(..)
+  , encode
   , basics, char, string
   , maybe, result, list, array, dict, tuple
   , platform, cmd, sub
@@ -16,11 +17,12 @@ module AST.Module.Name
 
 import Prelude hiding (maybe)
 import Control.Monad (liftM2)
-import Data.Binary
+import qualified Data.Binary as B
 
 import qualified Elm.Name as N
 import qualified Elm.Package as Pkg
 
+import qualified Json.Encode as Json
 
 
 -- NAMES
@@ -39,6 +41,14 @@ instance Eq Canonical where
     home == home' && pkg == pkg'
 
 
+encode :: Canonical -> Json.Value
+encode (Canonical pkg home) =
+  Json.object $
+    [ ( "package"
+      , Pkg.encode pkg
+      )
+    , ( "module", Json.text $ N.toText home )
+    ]
 
 -- PRIMITIVES
 
@@ -210,9 +220,9 @@ canonicalIsKernel (Canonical _ name) =
 -- BINARY
 
 
-instance Binary Canonical where
+instance B.Binary Canonical where
   put (Canonical a b) =
-    put a >> put b
+    B.put a >> B.put b
 
   get =
-    liftM2 Canonical get get
+    liftM2 Canonical B.get B.get

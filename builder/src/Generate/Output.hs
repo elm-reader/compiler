@@ -79,7 +79,7 @@ generate mode target maybeOutput summary graph@(Crawl.Graph args locals _ _ _) a
 
               Reader ->
                 do  interfaces <- getInterfaces summary locals artifacts
-                    return $ Mode.reader target interfaces (getSourceMaps summary artifacts)
+                    return $ Mode.reader target interfaces (consolidateSourceMaps summary artifacts)
 
               Dev ->
                 return $ Mode.dev target
@@ -116,22 +116,22 @@ getInterfaces (Summary.Summary root project _ interfaces _) locals artifacts =
           Map.foldrWithKey addInterface (Map.foldrWithKey addArtifact [] artifacts) cached
 
 
-getSourceMaps
+consolidateSourceMaps
   :: Summary.Summary
   -> Map.Map Module.Raw Compiler.Artifacts
-  -> Map.Map Module.Canonical SrcMap.Module
-getSourceMaps (Summary.Summary _ project _ _ _) artifacts =
+  -> SrcMap.Project
+consolidateSourceMaps (Summary.Summary _ project _ _ _) artifacts =
   let
     pkg = Project.getName project
 
-    addSourceMap home (Compiler.Artifacts _ _ _ maybeSrcMap) srcMaps =
+    addSourceMap home (Compiler.Artifacts _ _ _ maybeSrcMap) projectSrcMap =
       case maybeSrcMap of
         Nothing ->
-          srcMaps
-        Just srcMap ->
-          Map.insert (ModuleName.Canonical pkg home) srcMap srcMaps
+          projectSrcMap
+        Just moduleSrcMap ->
+          SrcMap.addModule (ModuleName.Canonical pkg home) moduleSrcMap projectSrcMap
   in
-  Map.foldrWithKey addSourceMap Map.empty artifacts
+  Map.foldrWithKey addSourceMap SrcMap.emptyProject artifacts
 
 
 -- GENERATE MONOLITH

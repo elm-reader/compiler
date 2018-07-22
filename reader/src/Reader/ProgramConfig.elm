@@ -7,12 +7,11 @@ module Reader.ProgramConfig
         , Interface
         , Interfaces
         , SourceMap
-        , SourceMaps
         , TraceData(..)
         , decodeConfig
         , decodeTraceData
         , emptyInterfaces
-        , emptySourceMaps
+        , emptySourceMap
         )
 
 import Json.Decode as JD
@@ -24,28 +23,24 @@ import Tuple
 
 
 type alias Config =
-    { interfaces : Interfaces, sourceMaps : SourceMaps, traceData : TraceData }
+    { interfaces : Interfaces, sourceMap : SourceMap, traceData : TraceData }
 
 
 decodeConfig : JD.Decoder Config
 decodeConfig =
     JD.map3 Config
         (JD.field "interfaces" decodeInterfaces)
-        (JD.field "source_maps" decodeSourceMaps)
+        (JD.field "source_map" decodeSourceMap)
         (JD.field "traces" decodeTraceData)
 
 
-type alias PackageId =
-    { author : String
-    , project : String
-    }
+type PackageId
+    = PackageId String -- in format "author/project"
 
 
-decodePackage : JD.Decoder PackageId
-decodePackage =
-    JD.map2 PackageId
-        (JD.field "author" JD.string)
-        (JD.field "project" JD.string)
+decodePackageId : JD.Decoder PackageId
+decodePackageId =
+    JD.map PackageId JD.string
 
 
 type alias ModuleId =
@@ -54,10 +49,10 @@ type alias ModuleId =
     }
 
 
-decodeModule : JD.Decoder ModuleId
-decodeModule =
+decodeModuleId : JD.Decoder ModuleId
+decodeModuleId =
     JD.map2 ModuleId
-        (JD.field "package" decodePackage)
+        (JD.field "package" decodePackageId)
         (JD.field "module" JD.string)
 
 
@@ -89,32 +84,21 @@ type alias Interface =
 -- SOURCE MAPS
 
 
-type alias SourceMaps =
-    Dict ModuleId SourceMap
-
-
-emptySourceMaps =
-    Dict.empty
-
-
-decodeSourceMaps : JD.Decoder SourceMaps
-decodeSourceMaps =
-    decodeDict
-        ( "module", decodeModule )
-        ( "source_map", decodeSourceMap )
-
-
 type alias SourceMap =
-    { source : String
-    , frames : Dict FrameId Frame
+    { frames : Dict FrameId Frame
+    , sources : Dict ModuleId String
     }
+
+
+emptySourceMap =
+    SourceMap Dict.empty Dict.empty
 
 
 decodeSourceMap : JD.Decoder SourceMap
 decodeSourceMap =
     JD.map2 SourceMap
-        (JD.field "source" JD.string)
         (JD.field "frames" <| decodeDict ( "id", decodeFrameId ) ( "frame", decodeFrame ))
+        (JD.field "sources" <| decodeDict ( "module", decodeModuleId ) ( "source", JD.string ))
 
 
 type alias FrameId =
@@ -127,7 +111,7 @@ type alias FrameId =
 decodeFrameId : JD.Decoder FrameId
 decodeFrameId =
     JD.map3 FrameId
-        (JD.field "module" decodeModule)
+        (JD.field "module" decodeModuleId)
         (JD.field "def" JD.string)
         (JD.field "frame_index" JD.int)
 
@@ -144,7 +128,7 @@ decodeFrame =
     let
         decodeExprName =
             JD.map2 Tuple.pair
-                (JD.field "module" decodeModule)
+                (JD.field "module" decodeModuleId)
                 (JD.field "name" JD.string)
     in
     JD.map3 Frame
@@ -167,14 +151,16 @@ decodeExprId =
 
 
 type alias Region =
-    { start : Position
+    { mod : ModuleId
+    , start : Position
     , cols : Position
     }
 
 
 decodeRegion : JD.Decoder Region
 decodeRegion =
-    JD.map2 Region
+    JD.map3 Region
+        (JD.field "module" decodeModuleId)
         (JD.field "start" decodePosition)
         (JD.field "end" decodePosition)
 

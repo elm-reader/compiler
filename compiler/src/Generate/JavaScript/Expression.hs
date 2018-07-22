@@ -1058,9 +1058,9 @@ toDebugMetadata mode msgType =
         , ("types", Type.encodeMetadata (Extract.fromMsg interfaces msgType))
         ]
 
-    Mode.Dev _ (Just interfaces) (Just srcMaps) ->
+    Mode.Dev _ (Just interfaces) (Just srcMap) ->
       JS.Json $ Encode.object $
-        [ ("source_maps", SrcMap.encodeModules srcMaps)
+        [ ("source_map", SrcMap.encodeProject srcMap)
         , ("interfaces", Encode.text $ Text.pack $ show interfaces)
         -- TODO: implement an Interface.encode function
         ]

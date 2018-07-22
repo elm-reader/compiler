@@ -7,7 +7,6 @@ import Platform.Sub as Sub exposing (none)
 import Platform.Cmd as Cmd exposing (none)
 
 import Reader exposing (Model, update, view, parseConfig)
-import Reader.Tracing as Tracing exposing (requestTrace)
 
 */
 

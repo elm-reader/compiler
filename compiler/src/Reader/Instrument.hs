@@ -116,7 +116,7 @@ instrumentTopLevelDef home def =
             frameId <- freshFrameId rootCtx
             return $
               ( recordFrame frameId newBody
-              , collectOuterFrame frameId region bodySrcMaps
+              , collectOuterFrame home frameId region bodySrcMaps
               )
 
         YesLambda ->
@@ -136,11 +136,14 @@ instrumentExpr ctx expr =
 
 instrumentExprWithId :: Context -> SrcMap.ExprId -> Can.Expr -> WithIdState (Can.Expr, Answers)
 instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
+  let
+    qualifiedRegion = SrcMap.regionIn (_moduleName ctx) region
+  in
   case expr of
     Can.VarLocal name ->
       case Map.lookup name $ _varIds ctx of
         Just priorId ->
-          return (locExpr, makeExprRegion priorId region)
+          return (locExpr, makeExprRegion priorId qualifiedRegion)
 
         Nothing ->
           trace "Warning: Encountered an unknown local variable during instrumentation" $
@@ -192,7 +195,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             A.At region $ Can.Negate newInner
 
           srcMap =
-            combine innerSrcMap $ makeExprRegion exprId region
+            combine innerSrcMap $ makeExprRegion exprId qualifiedRegion
 
         return (newNegate, srcMap)
 
@@ -203,7 +206,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let
           binopRegionSrcMap =
-            makeExprRegion exprId region
+            makeExprRegion exprId qualifiedRegion
 
           binopNameSrcMap =
             makeExprName exprId home name
@@ -219,7 +222,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
     Can.Lambda args body ->
       do
-        (argVars, argSrcMaps) <- unzip <$> traverse instrumentPattern args
+        (argVars, argSrcMaps) <- unzip <$> traverse (instrumentPattern ctx) args
 
         let
           allArgVars =
@@ -234,10 +237,10 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let
           frameSrcMaps =
-            makeFrames $ collectOuterFrame frameId region $ combineMany $ bodySrcMap : argSrcMaps
+            makeFrames $ collectOuterFrame (_moduleName ctx) frameId region $ combineMany $ bodySrcMap : argSrcMaps
 
           lambdaSrcMap =
-            makeExprRegion exprId region
+            makeExprRegion exprId qualifiedRegion
 
           captures =
             Map.toList $ Map.restrictKeys (_varIds ctx) $ varsUsed body
@@ -288,7 +291,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         newCall <- recordCall exprId newFunc newArgs
 
-        let callSrcMap = makeExprRegion exprId region
+        let callSrcMap = makeExprRegion exprId qualifiedRegion
 
         return (newCall, combineMany $ callSrcMap : funcSrcMap : argSrcMaps)
 
@@ -306,7 +309,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let
           ifSrcMap =
-            makeExprRegion exprId region
+            makeExprRegion exprId qualifiedRegion
 
           newIf =
             recordExpr exprId $
@@ -356,7 +359,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
     Can.LetDestruct pat val body ->
       do
-        (patVars, patSrcMap) <- instrumentPattern pat
+        (patVars, patSrcMap) <- instrumentPattern ctx pat
         (newVal, valSrcMap) <- instrumentExpr ctx val
 
         let ctxWithVars = addVars (Bag.toList patVars) ctx
@@ -376,7 +379,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
         let
           instrumentBranch (Can.CaseBranch pat body) =
             do
-              (patVars, patSrcMap) <- instrumentPattern pat
+              (patVars, patSrcMap) <- instrumentPattern ctx pat
               let ctxWithVars = addVars (Bag.toList patVars) ctx
               (newBody, bodySrcMap) <- instrumentExpr ctxWithVars body
 
@@ -399,7 +402,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             A.At region $ Can.Case newVal newBranches
 
           srcMap =
-            combineMany $ makeExprRegion exprId region : valSrcMap : branchSrcMaps
+            combineMany $ makeExprRegion exprId qualifiedRegion : valSrcMap : branchSrcMaps
 
         return (newCase, srcMap)
 
@@ -416,7 +419,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             A.At region $ Can.Access newRecord field
 
           srcMap =
-            combine recordSrcMap $ makeExprRegion exprId region
+            combine recordSrcMap $ makeExprRegion exprId qualifiedRegion
 
         return (newAccess, srcMap)
 
@@ -438,7 +441,7 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
             A.At region $ Can.Update name newRecord $ Map.fromList newUpdates
 
           srcMap =
-            combineMany $ makeExprRegion exprId region : recordSrcMap : updateSrcMaps
+            combineMany $ makeExprRegion exprId qualifiedRegion : recordSrcMap : updateSrcMaps
 
         return (newUpdate, srcMap)
 
@@ -501,7 +504,7 @@ instrumentDef ctx exprId def =
       nameSrcMap =
         case isLambda of
           NoLambda ->
-            makeExprRegion exprId $ A.toRegion name
+            makeExprRegion exprId $ SrcMap.regionIn (_moduleName ctx) (A.toRegion name)
 
           YesLambda ->
             noAnswers
@@ -520,8 +523,12 @@ instrumentDef ctx exprId def =
 
 -- Generate source maps from a pattern, along with a list of variables declared in that pattern and
 -- their associated expression ids.
-instrumentPattern :: Can.Pattern -> WithIdState (Bag.Bag (N.Name, SrcMap.ExprId), Answers)
-instrumentPattern (A.At region pat) =
+instrumentPattern :: Context -> Can.Pattern -> WithIdState (Bag.Bag (N.Name, SrcMap.ExprId), Answers)
+instrumentPattern ctx (A.At region pat) =
+  let
+    qualifyRegion = SrcMap.regionIn (_moduleName ctx)
+    qualifiedRegion = qualifyRegion region
+  in
   case pat of
     Can.PAnything ->
       return (Bag.empty, noAnswers)
@@ -531,13 +538,13 @@ instrumentPattern (A.At region pat) =
         exprId <- freshExprId
         return
           ( Bag.one (name, exprId)
-          , makeExprRegion exprId region
+          , makeExprRegion exprId qualifiedRegion
           )
 
     Can.PRecord fields ->
       do
         let names = map A.toValue fields
-        let regions = map A.toRegion fields
+        let regions = map (qualifyRegion . A.toRegion) fields
         exprIds <- replicateM (length fields) freshExprId
         let vars = Bag.fromList id $ zip names exprIds
         let exprRegions = combineMany $ zipWith makeExprRegion exprIds regions
@@ -545,10 +552,10 @@ instrumentPattern (A.At region pat) =
 
     Can.PAlias inner name ->
       do
-        (innerVars, innerAnswers) <- instrumentPattern inner
+        (innerVars, innerAnswers) <- instrumentPattern ctx inner
         exprId <- freshExprId
         let vars = Bag.append innerVars $ Bag.one (name, exprId)
-        let answers = combine innerAnswers $ makeExprRegion exprId region
+        let answers = combine innerAnswers $ makeExprRegion exprId qualifiedRegion
         return (vars, answers)
 
     Can.PUnit ->
@@ -556,12 +563,12 @@ instrumentPattern (A.At region pat) =
 
     Can.PTuple a b maybeC ->
       do
-        (aVars, aAnswers) <- instrumentPattern a
-        (bVars, bAnswers) <- instrumentPattern b
+        (aVars, aAnswers) <- instrumentPattern ctx a
+        (bVars, bAnswers) <- instrumentPattern ctx b
         (cVars, cAnswers) <-
           case maybeC of
             Just c ->
-              instrumentPattern c
+              instrumentPattern ctx c
 
             Nothing ->
               return (Bag.empty, noAnswers)
@@ -573,13 +580,13 @@ instrumentPattern (A.At region pat) =
 
     Can.PList items ->
       do
-        (vars, answers) <- unzip <$> traverse instrumentPattern items
+        (vars, answers) <- unzip <$> traverse (instrumentPattern ctx) items
         return (Bag.concat vars, combineMany answers)
 
     Can.PCons x xs ->
       do
-        (xVars, xAnswers) <- instrumentPattern x
-        (xsVars, xsAnswers) <- instrumentPattern xs
+        (xVars, xAnswers) <- instrumentPattern ctx x
+        (xsVars, xsAnswers) <- instrumentPattern ctx xs
         return (Bag.append xVars xsVars, combine xAnswers xsAnswers)
 
     Can.PBool _ _ ->
@@ -603,7 +610,7 @@ instrumentPattern (A.At region pat) =
             makeQualified exprId region home name
 
           instrumentArg (Can.PatternCtorArg _ _ arg) =
-            instrumentPattern arg
+            instrumentPattern ctx arg
 
         (argVars, argAnswers) <- unzip <$> traverse instrumentArg args
 
@@ -641,7 +648,7 @@ recordCall (SrcMap.ExprId index) func args =
 
     let
       tempVarExpr var =
-        A.At R.zero $ Can.VarLocal var
+        A.At (A.toRegion func) $ Can.VarLocal var
 
       funcVarExpr =
         tempVarExpr funcVar
@@ -650,14 +657,14 @@ recordCall (SrcMap.ExprId index) func args =
         map tempVarExpr argVars
 
       callLambda =
-        A.At R.zero $ Can.Lambda [A.At R.zero Can.PUnit] $
-        A.At R.zero $ Can.Call funcVarExpr argVarExprs
+        A.At (A.toRegion func) $ Can.Lambda [A.At R.zero Can.PUnit] $
+        A.At (A.toRegion func) $ Can.Call funcVarExpr argVarExprs
 
       exprId =
-        A.At R.zero $ Can.Int index
+        A.At (A.toRegion func) $ Can.Int index
 
       recordedCall =
-        A.At R.zero $ Can.Call Hooks.recordCall [exprId, funcVarExpr, callLambda]
+        A.At (A.toRegion func) $ Can.Call Hooks.recordCall [exprId, funcVarExpr, callLambda]
 
       tempDef var val =
         Can.Def (A.At R.zero var) [] val
@@ -666,7 +673,7 @@ recordCall (SrcMap.ExprId index) func args =
         tempDef funcVar func : zipWith tempDef argVars args
 
       tempLet def body =
-        A.At R.zero $ Can.Let def body
+        A.At (A.toRegion func) $ Can.Let def body
 
     return $ foldr tempLet recordedCall tempDefs
 
@@ -695,7 +702,7 @@ markInstrumented lam =
 data Answers =
   Answers
     { _frames :: Bag.Bag (SrcMap.FrameId, SrcMap.Frame)
-    , _exprRegions :: Bag.Bag (SrcMap.ExprId, R.Region)
+    , _exprRegions :: Bag.Bag (SrcMap.ExprId, SrcMap.QualifiedRegion)
     , _exprNames :: Bag.Bag (SrcMap.ExprId, (ModuleName.Canonical, N.Name))
     }
 
@@ -723,7 +730,7 @@ combineMany =
   List.foldl' combine noAnswers
 
 
-makeExprRegion :: SrcMap.ExprId -> R.Region -> Answers
+makeExprRegion :: SrcMap.ExprId -> SrcMap.QualifiedRegion -> Answers
 makeExprRegion exprId region =
   Answers
     { _frames = Bag.empty
@@ -745,7 +752,7 @@ makeQualified :: SrcMap.ExprId -> R.Region -> ModuleName.Canonical -> N.Name -> 
 makeQualified exprId region home name =
   let
     regionSrcMap =
-      makeExprRegion exprId region
+      makeExprRegion exprId (SrcMap.regionIn home region)
 
     nameSrcMap =
       makeExprName exprId home name
@@ -762,12 +769,17 @@ makeFrames frames =
     }
 
 
-collectOuterFrame :: SrcMap.FrameId -> R.Region -> Answers -> Bag.Bag (SrcMap.FrameId, SrcMap.Frame)
-collectOuterFrame frameId frameRegion (Answers frames regions names) =
+collectOuterFrame
+  :: ModuleName.Canonical
+  -> SrcMap.FrameId
+  -> R.Region
+  -> Answers
+  -> Bag.Bag (SrcMap.FrameId, SrcMap.Frame)
+collectOuterFrame home frameId frameRegion (Answers frames regions names) =
   let
     frame =
       SrcMap.Frame
-        { SrcMap._region = frameRegion
+        { SrcMap._region = SrcMap.regionIn home frameRegion
         , SrcMap._exprRegions = Bag.toList regions
         , SrcMap._exprNames = Map.fromList $ Bag.toList names
         }
