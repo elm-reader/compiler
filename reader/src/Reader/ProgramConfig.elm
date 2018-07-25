@@ -6,14 +6,19 @@ module Reader.ProgramConfig
         , FrameId
         , Interface
         , Interfaces
+        , Region
         , SourceMap
         , TraceData(..)
+        , TraceFrame(..)
+        , childFrames
         , decodeConfig
         , decodeTraceData
         , emptyInterfaces
         , emptySourceMap
+        , lookupRegionSource
         )
 
+import Debug
 import Json.Decode as JD
 import Reader.Dict as Dict exposing (Dict)
 import Tuple
@@ -90,6 +95,47 @@ type alias SourceMap =
     }
 
 
+lookupRegionSource : Region -> Dict ModuleId String -> Maybe String
+lookupRegionSource { mod, start, end } sources =
+    let
+        -- nthLine returns the character position at which the nth line starts
+        nthLine n str =
+            if str == "" then
+                Nothing
+            else if n <= 1 then
+                Just 0
+            else
+                let
+                    newlines =
+                        String.indices "\n" str
+
+                    lineBreakPos =
+                        List.head <| List.drop (n - 2) newlines
+                in
+                Maybe.map ((+) 1) lineBreakPos
+
+        modSource =
+            Dict.lookup mod sources
+
+        startPos =
+            modSource
+                |> Maybe.andThen (nthLine start.line)
+                |> Maybe.map ((+) (start.col - 1))
+
+        endPos =
+            modSource
+                |> Maybe.andThen (nthLine end.line)
+                |> Maybe.map ((+) (end.col - 1))
+    in
+    case ( startPos, endPos ) of
+        ( Just startIndex, Just endIndex ) ->
+            modSource
+                |> Maybe.map (String.slice startIndex endIndex)
+
+        ( _, _ ) ->
+            Nothing
+
+
 emptySourceMap =
     SourceMap Dict.empty Dict.empty
 
@@ -153,7 +199,7 @@ decodeExprId =
 type alias Region =
     { mod : ModuleId
     , start : Position
-    , cols : Position
+    , end : Position
     }
 
 
@@ -231,6 +277,32 @@ decodeTraceFrame =
                 (JD.field "child_frames" <| JD.list decFrame)
     in
     JD.oneOf [ decodeNonInstrumented, decodeInstrumented ]
+
+
+childFrames : TraceFrame -> List TraceFrame
+childFrames traceFrame =
+    case traceFrame of
+        InstrumentedFrame _ exprs ->
+            Dict.values exprs
+                |> List.map .childFrame
+                |> filterListForJust
+
+        NonInstrumentedFrame children ->
+            children
+
+
+filterListForJust : List (Maybe a) -> List a
+filterListForJust =
+    List.foldr
+        (\maybeVal accum ->
+            case maybeVal of
+                Nothing ->
+                    accum
+
+                Just elem ->
+                    elem :: accum
+        )
+        []
 
 
 {-| -}

@@ -20,9 +20,10 @@ import Browser
 import Debug exposing (toString)
 import Elm.Kernel.Reader
 import Html exposing (..)
-import Html.Attributes exposing (property)
+import Html.Attributes exposing (style)
 import Html.Events exposing (onClick)
 import Json.Decode as JD
+import Reader.Dict as Dict
 import Reader.ProgramConfig as PC
 
 
@@ -97,20 +98,88 @@ update Msg ({ programConfig } as model) =
 
 view : Model -> Html Msg
 view model =
+    case model.programConfig of
+        Ok parsed ->
+            viewTraces parsed
+
+        Err err ->
+            div []
+                [ pre [] [ text <| JD.errorToString err ]
+                ]
+
+
+viewTraces : PC.Config -> Html Msg
+viewTraces { sourceMap, traceData } =
     let
-        cfg =
-            case model.programConfig of
-                Ok parsed ->
-                    Debug.toString parsed
-
-                Err errMsg ->
-                    JD.errorToString errMsg
+        (PC.TraceData traceFrames) =
+            traceData
     in
-    div []
-        [ pre [] [ text cfg ]
+    viewTrace sourceMap (PC.NonInstrumentedFrame traceFrames)
+
+
+viewTrace : PC.SourceMap -> PC.TraceFrame -> Html Msg
+viewTrace srcMap traceFrame =
+    case traceFrame of
+        PC.InstrumentedFrame frameId exprs ->
+            let
+                maybeFrame =
+                    Dict.lookup frameId srcMap.frames
+
+                maybeRegionSource =
+                    maybeFrame
+                        |> Maybe.map .region
+                        |> Maybe.andThen (\region -> PC.lookupRegionSource region srcMap.sources)
+            in
+            case Maybe.map2 Tuple.pair maybeFrame maybeRegionSource of
+                Just ( frame, src ) ->
+                    box <|
+                        [ text ("Instrumented frame (id: " ++ toString frameId ++ ")")
+                        , pre [] [ text src ]
+                        , viewChildFrames srcMap traceFrame
+                        ]
+
+                Nothing ->
+                    let
+                        errMsg =
+                            "failed to find frame region! id: "
+                                ++ toString frameId
+                                ++ "\nsrcMap: "
+                                ++ toString srcMap
+                    in
+                    box [ pre [] [ text errMsg ] ]
+
+        PC.NonInstrumentedFrame childFrames ->
+            let
+                children =
+                    childFrames
+                        |> List.map (viewTrace srcMap)
+            in
+            box
+                [ text "Non-instrumented frame. "
+                , viewChildFrames srcMap traceFrame
+                ]
+
+
+viewChildFrames : PC.SourceMap -> PC.TraceFrame -> Html Msg
+viewChildFrames srcMap traceFrame =
+    let
+        children =
+            List.map (viewTrace srcMap) (PC.childFrames traceFrame)
+    in
+    if children == [] then
+        text "No child frames"
+    else
+        div []
+            [ text "Child frames:"
+            , ul [] children
+            ]
+
+
+box : List (Html msg) -> Html msg
+box items =
+    li
+        [ style "border-left" "1px solid green"
+        , style "padding-left" "3px"
+        , style "margin-bottom" "6px"
         ]
-
-
-viewOneLine : String -> Html msg
-viewOneLine str =
-    div [] [ text str ]
+        items

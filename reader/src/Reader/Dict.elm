@@ -4,7 +4,9 @@ module Reader.Dict
         , empty
         , fromList
         , insert
+        , keys
         , lookup
+        , values
         )
 
 
@@ -40,6 +42,16 @@ lookupPairs targetKey pairs =
 
         ( k, v ) :: rest ->
             if k == targetKey then
-                v
+                Just v
             else
                 lookupPairs targetKey rest
+
+
+keys : Dict k v -> List k
+keys (Dict pairs) =
+    List.map (\( key, _ ) -> key) pairs
+
+
+values : Dict k v -> List v
+values (Dict pairs) =
+    List.map (\( _, value ) -> value) pairs
