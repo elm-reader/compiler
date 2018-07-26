@@ -4,6 +4,7 @@ module Reader.Dict
         , empty
         , fromList
         , insert
+        , keyValuePairs
         , keys
         , lookup
         , values
@@ -55,3 +56,8 @@ keys (Dict pairs) =
 values : Dict k v -> List v
 values (Dict pairs) =
     List.map (\( _, value ) -> value) pairs
+
+
+keyValuePairs : Dict k v -> List ( k, v )
+keyValuePairs (Dict pairs) =
+    pairs

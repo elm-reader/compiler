@@ -6,21 +6,26 @@ module Reader.ProgramConfig
         , FrameId
         , Interface
         , Interfaces
+        , Position
         , Region
         , SourceMap
         , TraceData(..)
+        , TraceExpr
         , TraceFrame(..)
         , childFrames
+        , compareExprIds
         , decodeConfig
         , decodeTraceData
         , emptyInterfaces
         , emptySourceMap
+        , exprsEndingHere
+        , exprsStartingHere
         , lookupRegionSource
         )
 
 import Debug
 import Json.Decode as JD
-import Reader.Dict as Dict exposing (Dict)
+import Reader.Dict as D
 import Tuple
 
 
@@ -70,15 +75,15 @@ type alias Name =
 
 
 type alias Interfaces =
-    Dict ModuleId Interface
+    D.Dict ModuleId Interface
 
 
 emptyInterfaces =
-    Dict.empty
+    D.empty
 
 
 decodeInterfaces =
-    JD.succeed Dict.empty
+    JD.succeed D.empty
 
 
 type alias Interface =
@@ -90,12 +95,12 @@ type alias Interface =
 
 
 type alias SourceMap =
-    { frames : Dict FrameId Frame
-    , sources : Dict ModuleId String
+    { frames : D.Dict FrameId Frame
+    , sources : D.Dict ModuleId String
     }
 
 
-lookupRegionSource : Region -> Dict ModuleId String -> Maybe String
+lookupRegionSource : Region -> D.Dict ModuleId String -> Maybe String
 lookupRegionSource { mod, start, end } sources =
     let
         -- nthLine returns the character position at which the nth line starts
@@ -115,7 +120,7 @@ lookupRegionSource { mod, start, end } sources =
                 Maybe.map ((+) 1) lineBreakPos
 
         modSource =
-            Dict.lookup mod sources
+            D.lookup mod sources
 
         startPos =
             modSource
@@ -136,8 +141,55 @@ lookupRegionSource { mod, start, end } sources =
             Nothing
 
 
+positionInRegion : Position -> Region -> Bool
+positionInRegion pos { start, end } =
+    let
+        between left right x =
+            x > left && x < right
+    in
+    (pos.line |> between start.line end.line)
+        || (pos.line == start.line && pos.col >= start.col)
+        || (pos.line == end.line && pos.col < end.col)
+
+
+lookupPositionExprIds : Frame -> Position -> List ExprId
+lookupPositionExprIds { exprRegions } pos =
+    exprRegions
+        |> D.keyValuePairs
+        |> List.filterMap
+            (\( exprId, regions ) ->
+                if List.any (positionInRegion pos) regions then
+                    Just exprId
+                else
+                    Nothing
+            )
+
+
+exprsWithARegionFulfilling : (Region -> Bool) -> D.Dict ExprId (List Region) -> List ExprId
+exprsWithARegionFulfilling condition exprRegions =
+    exprRegions
+        |> D.keyValuePairs
+        |> List.filterMap
+            (\( exprId, regions ) ->
+                if List.any condition regions then
+                    Just exprId
+                else
+                    Nothing
+            )
+
+
+exprsStartingHere : Position -> D.Dict ExprId (List Region) -> List ExprId
+exprsStartingHere pos =
+    exprsWithARegionFulfilling (\region -> region.start == pos)
+
+
+exprsEndingHere : Position -> D.Dict ExprId (List Region) -> List ExprId
+exprsEndingHere pos =
+    exprsWithARegionFulfilling (\region -> region.end == pos)
+
+
 emptySourceMap =
-    SourceMap Dict.empty Dict.empty
+    SourceMap D.empty D.empty
 
 
 decodeSourceMap : JD.Decoder SourceMap
@@ -164,8 +216,8 @@ decodeFrameId =
 
 type alias Frame =
     { region : Region
-    , exprRegions : Dict ExprId (List Region)
-    , exprNames : Dict ExprId ( ModuleId, Name )
+    , exprRegions : D.Dict ExprId (List Region)
+    , exprNames : D.Dict ExprId ( ModuleId, Name )
     }
 
 
@@ -185,6 +237,11 @@ decodeFrame =
 
 type ExprId
     = ExprId Int
+
+
+compareExprIds : ExprId -> ExprId -> Order
+compareExprIds (ExprId i) (ExprId j) =
+    compare i j
 
 
 decodeExprId : JD.Decoder ExprId
@@ -228,7 +285,7 @@ decodePosition =
 -- GENERAL DECODE UTILS
 
 
-decodeDict : ( String, JD.Decoder key ) -> ( String, JD.Decoder value ) -> JD.Decoder (Dict key value)
+decodeDict : ( String, JD.Decoder key ) -> ( String, JD.Decoder value ) -> JD.Decoder (D.Dict key value)
 decodeDict ( keyName, decodeKey ) ( valName, decodeVal ) =
     let
         decodeEntry =
@@ -236,7 +293,7 @@ decodeDict ( keyName, decodeKey ) ( valName, decodeVal ) =
                 (JD.field keyName decodeKey)
                 (JD.field valName decodeVal)
     in
-    JD.map Dict.fromList (JD.list decodeEntry)
+    JD.map D.fromList (JD.list decodeEntry)
 
 
 
@@ -254,7 +311,7 @@ decodeTraceData =
 
 {-| -}
 type TraceFrame
-    = InstrumentedFrame FrameId (Dict ExprId TraceExpr)
+    = InstrumentedFrame FrameId (D.Dict ExprId TraceExpr)
     | NonInstrumentedFrame (List TraceFrame)
 
 
@@ -283,7 +340,7 @@ childFrames : TraceFrame -> List TraceFrame
 childFrames traceFrame =
     case traceFrame of
         InstrumentedFrame _ exprs ->
-            Dict.values exprs
+            D.values exprs
                 |> List.map .childFrame
                 |> filterListForJust
 
