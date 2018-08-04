@@ -118,6 +118,11 @@ viewTraces { sourceMap, traceData } =
     viewTrace sourceMap (PC.NonInstrumentedFrame traceFrames)
 
 
+fmtErr : String -> Html msg
+fmtErr msg =
+    pre [ A.style "white-space" "pre-wrap" ] [ text msg ]
+
+
 viewTrace : PC.SourceMap -> PC.TraceFrame -> Html Msg
 viewTrace srcMap traceFrame =
     case traceFrame of
@@ -133,9 +138,23 @@ viewTrace srcMap traceFrame =
             in
             case Maybe.map2 Tuple.pair maybeFrame maybeRegionSource of
                 Just ( frame, src ) ->
+                    let
+                        content =
+                            case viewFrameTrace srcMap frameId exprTraces of
+                                Err e ->
+                                    div []
+                                        [ p [ A.style "font-weight" "bold" ] [ text "Got error:" ]
+                                        , fmtErr e
+                                        , p [ A.style "font-weight" "bold" ] [ text "Parsing this frame's trace:" ]
+                                        , pre [] [ text src ]
+                                        ]
+
+                                Ok frameTraceHtml ->
+                                    frameTraceHtml
+                    in
                     box <|
                         [ text ("Instrumented frame (id: " ++ toString frameId ++ ")")
-                        , viewFrameTrace srcMap frameId exprTraces
+                        , content
                         , viewChildFrames srcMap traceFrame
                         ]
 
@@ -192,51 +211,54 @@ type Token
     | TokenChar Char -- 'x'
 
 
-viewFrameTrace : PC.SourceMap -> PC.FrameId -> D.Dict PC.ExprId PC.TraceExpr -> Html Msg
+viewFrameTrace : PC.SourceMap -> PC.FrameId -> D.Dict PC.ExprId PC.TraceExpr -> Result String (Html Msg)
 viewFrameTrace srcMap frameId exprTraces =
     viewFrameTokens srcMap frameId
-        |> viewAllFrameTokens exprTraces
-        |> pre []
+        |> Result.andThen (viewAllFrameTokens exprTraces)
+        |> Result.map (pre [])
 
 
-viewAllFrameTokens : D.Dict PC.ExprId PC.TraceExpr -> List Token -> List (Html Msg)
+viewAllFrameTokens : D.Dict PC.ExprId PC.TraceExpr -> List Token -> Result String (List (Html Msg))
 viewAllFrameTokens exprTraces tokens =
     case tokens of
         (TokenChar ch) :: rest ->
-            text (String.fromChar ch) :: viewAllFrameTokens exprTraces rest
+            viewAllFrameTokens exprTraces rest
+                |> Result.map (\restHtml -> text (String.fromChar ch) :: restHtml)
 
         (TokenExprStart exprId) :: rest ->
-            let
-                ( htmlItems, tokensAfterExpr ) =
-                    takeTokensInExpr exprTraces exprId rest
-            in
-            htmlItems ++ viewAllFrameTokens exprTraces tokensAfterExpr
+            case takeTokensInExpr exprTraces exprId rest of
+                Ok ( htmlItems, tokensAfterExpr ) ->
+                    viewAllFrameTokens exprTraces tokensAfterExpr
+                        |> Result.map (\restHtml -> htmlItems ++ restHtml)
+
+                Err e ->
+                    Err (e ++ "\n All tokens were:" ++ toString tokens)
 
         (TokenExprEnd exprId) :: rest ->
-            Debug.todo <| "unexpected TokenExprEnd [\n  " ++ (String.join ",\n  " <| List.map toString tokens)
+            Err ("unexpected TokenExprEnd [\n  " ++ (String.join ",\n  " <| List.map toString tokens))
 
         [] ->
-            []
+            Ok []
 
 
 {-| takeTokensInExpr parses a token stream to Html, processing up to the end of `contextExpr`
 (i.e. until the token `TokenExprEnd contextExpr`), and returns a list of Html items in that
 expression as well as the list of remaining tokens.
 -}
-takeTokensInExpr : D.Dict PC.ExprId PC.TraceExpr -> PC.ExprId -> List Token -> ( List (Html Msg), List Token )
+takeTokensInExpr : D.Dict PC.ExprId PC.TraceExpr -> PC.ExprId -> List Token -> Result String ( List (Html Msg), List Token )
 takeTokensInExpr exprTraces contextExpr tokens =
     case tokens of
         [] ->
-            Debug.todo "unexpected end of stream"
+            Err "unexpected end of stream"
 
         (TokenChar ch) :: restTokens ->
-            let
-                ( restHtmlInContext, tokensAfterContext ) =
-                    takeTokensInExpr exprTraces contextExpr restTokens
-            in
-            ( text (String.fromChar ch) :: restHtmlInContext
-            , tokensAfterContext
-            )
+            takeTokensInExpr exprTraces contextExpr restTokens
+                |> Result.map
+                    (\( restHtmlInContext, tokensAfterContext ) ->
+                        ( text (String.fromChar ch) :: restHtmlInContext
+                        , tokensAfterContext
+                        )
+                    )
 
         (TokenExprStart hereExprId) :: restTokens ->
             let
@@ -249,30 +271,36 @@ takeTokensInExpr exprTraces contextExpr tokens =
                                 ++ toString exprTraces
 
                         Just { value } ->
-                            toString value
+                            case value of
+                                Just val ->
+                                    PC.valueToString val
 
-                ( htmlItemsHere, tokensAfterHereExpr ) =
-                    takeTokensInExpr exprTraces hereExprId restTokens
-
-                ( htmlItemsAfterHere, tokensAfterContext ) =
-                    takeTokensInExpr exprTraces contextExpr tokensAfterHereExpr
+                                Nothing ->
+                                    "<no value associated with this expr in trace frame>"
             in
-            ( span (A.title exprTitle :: exprStyles) htmlItemsHere
-                :: htmlItemsAfterHere
-            , tokensAfterContext
-            )
+            takeTokensInExpr exprTraces hereExprId restTokens
+                |> Result.andThen
+                    (\( htmlItemsHere, tokensAfterHereExpr ) ->
+                        takeTokensInExpr exprTraces contextExpr tokensAfterHereExpr
+                            |> Result.map
+                                (\( htmlItemsAfterHere, tokensAfterContext ) ->
+                                    ( span (A.title exprTitle :: exprStyles) htmlItemsHere
+                                        :: htmlItemsAfterHere
+                                    , tokensAfterContext
+                                    )
+                                )
+                    )
 
         (TokenExprEnd closingExprId) :: restTokens ->
             if closingExprId == contextExpr then
-                ( [], restTokens )
+                Ok ( [], restTokens )
             else
-                -- FIXME
-                -- Debug.todo <|
-                --     "FIXME 3 unexpected TokenExprEnd: "
-                --         ++ toString closingExprId
-                --         ++ ", restTokens: "
-                --         ++ toString restTokens
-                ( [], restTokens )
+                Err
+                    ("Unexpected TokenExprEnd: "
+                        ++ toString closingExprId
+                        ++ ", restTokens: "
+                        ++ toString restTokens
+                    )
 
 
 exprStyles : List (Attribute msg)
@@ -287,19 +315,19 @@ exprStyles =
     ]
 
 
-viewFrameTokens : PC.SourceMap -> PC.FrameId -> List Token
+viewFrameTokens : PC.SourceMap -> PC.FrameId -> Result String (List Token)
 viewFrameTokens srcMap frameId =
     case D.lookup frameId srcMap.frames of
         Nothing ->
-            Debug.todo "could not find frameId in srcMap.frames"
+            Err "could not find frameId in srcMap.frames"
 
         Just { region, exprRegions } ->
             case PC.lookupRegionSource region srcMap.sources of
                 Nothing ->
-                    Debug.todo "could not find frame.region in srcMap.sources"
+                    Err "could not find frame.region in srcMap.sources"
 
                 Just src ->
-                    viewFrameSrcTokens region.start src exprRegions
+                    Ok (viewFrameSrcTokens region.start src exprRegions)
 
 
 viewFrameSrcTokens : PC.Position -> String -> D.Dict PC.ExprId (List PC.Region) -> List Token
@@ -321,19 +349,27 @@ viewFrameSrcTokens initialPos src exprRegions =
 
                         starts =
                             PC.exprsStartingHere position exprRegions
-                                |> Utils.reverseSortWith PC.compareExprIds
                                 |> List.map TokenExprStart
 
                         ends =
                             PC.exprsEndingHere nextPos exprRegions
-                                |> List.sortWith PC.compareExprIds
                                 |> List.map TokenExprEnd
                     in
                     ( nextPos
-                    , ends ++ [ TokenChar char ] ++ starts ++ accum
+                    , rconcat
+                        [ accum
+                        , starts
+                        , [ TokenChar char ]
+                        , ends
+                        ]
                     )
                 )
                 ( initialPos, [] )
                 src
     in
     List.reverse reversedAssociation
+
+
+rconcat : List (List a) -> List a
+rconcat =
+    List.reverse >> List.concat

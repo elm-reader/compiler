@@ -12,7 +12,7 @@ import Reader exposing (Model, update, view, parseConfig)
 
 var _Reader_main = F2(function (decoder, debugData)
 {
-  var programData = Object.assign({}, debugData, {traces: _Reader_toHumanReadable(_Reader_context).child_frames});
+  var programData = Object.assign({}, debugData, {traces: _Reader_contextJSON()});
   console.info("Program data:", programData);
   return __Browser_element({
     init: function () {
@@ -152,7 +152,7 @@ var _Reader_seq = F2(function(sideEffect, val)
 
 var _Reader_contextJSON = function ()
 {
-  return JSON.stringify(_Reader_toHumanReadable(_Reader_context));
+  return _Reader_toHumanReadable(_Reader_context).child_frames;
 };
 
 function _Reader_toHumanReadable(frame)
@@ -162,10 +162,14 @@ function _Reader_toHumanReadable(frame)
     var readableExprs = [];
     Object.keys(frame.__exprs).forEach(function (id) {
       var expr = frame.__exprs[id];
+      var val =
+        (typeof expr.__val === "function"
+          ? {"#<function>": {}}
+          : expr.__val);
       readableExprs.push({
         id: +id,
         expr: {
-          val: expr.__val,
+          val: val,
           child_frame: expr.__childFrame && _Reader_toHumanReadable(expr.__childFrame),
         }
       });
