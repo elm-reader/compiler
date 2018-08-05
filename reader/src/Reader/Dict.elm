@@ -1,6 +1,7 @@
 module Reader.Dict
     exposing
         ( Dict
+        , decode
         , empty
         , fromList
         , insert
@@ -9,6 +10,8 @@ module Reader.Dict
         , lookup
         , values
         )
+
+import Json.Decode as JD
 
 
 type Dict key value
@@ -61,3 +64,14 @@ values (Dict pairs) =
 keyValuePairs : Dict k v -> List ( k, v )
 keyValuePairs (Dict pairs) =
     pairs
+
+
+decode : (key -> key -> Order) -> ( String, JD.Decoder key ) -> ( String, JD.Decoder value ) -> JD.Decoder (Dict key value)
+decode comparer ( keyName, decodeKey ) ( valName, decodeVal ) =
+    let
+        decodeEntry =
+            JD.map2 Tuple.pair
+                (JD.field keyName decodeKey)
+                (JD.field valName decodeVal)
+    in
+    JD.map fromList (JD.list decodeEntry)

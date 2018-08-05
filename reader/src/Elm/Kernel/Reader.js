@@ -6,7 +6,7 @@ import Browser exposing (element)
 import Platform.Sub as Sub exposing (none)
 import Platform.Cmd as Cmd exposing (none)
 
-import Reader exposing (Model, update, view, parseConfig)
+import Reader exposing (update, view, parseConfig)
 
 */
 
@@ -17,7 +17,7 @@ var _Reader_main = F2(function (decoder, debugData)
   return __Browser_element({
     init: function () {
       return A2(__Tuple_pair,
-        __Reader_Model(__Reader_parseConfig(JSON.stringify(programData))),
+        __Reader_parseConfig(JSON.stringify(programData)),
         __Cmd_none);
     },
     update: __Reader_update,

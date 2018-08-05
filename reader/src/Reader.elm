@@ -21,10 +21,11 @@ import Debug exposing (toString)
 import Elm.Kernel.Reader
 import Html exposing (..)
 import Html.Attributes as A
-import Html.Events exposing (onClick)
+import Html.Events as E
 import Json.Decode as JD
 import Reader.Dict as D
-import Reader.ProgramConfig as PC
+import Reader.SourceMap as SourceMap exposing (SourceMap)
+import Reader.TraceData as TraceData exposing (TraceData(..))
 import Reader.Utils as Utils
 
 
@@ -58,12 +59,6 @@ seq =
     Elm.Kernel.Reader.seq
 
 
-{-| -}
-parseConfig : String -> Result JD.Error PC.Config
-parseConfig =
-    JD.decodeString PC.decodeConfig
-
-
 main : Program () Model Msg
 main =
     Elm.Kernel.Reader.main
@@ -73,9 +68,37 @@ main =
 -- MODEL
 
 
-type alias Model =
-    { programConfig : Result JD.Error PC.Config
-    }
+type Model
+    = ProgramDataError JD.Error
+    | ProgramDataReceived
+        { sources : SourceMap
+        , traces : TraceData
+        , hoveredExpr : Maybe CompleteExprData
+        }
+
+
+type alias CompleteExprData =
+    ( SourceMap.FrameId, SourceMap.ExprId, TraceData.Expr )
+
+
+{-| parseConfig is used by Reader.js to initialize the model from
+the JSON containing source map and tracing data.
+-}
+parseConfig : String -> Model
+parseConfig data =
+    let
+        decode =
+            JD.map2 (\src traces -> { sources = src, traces = traces })
+                (JD.field "source_map" SourceMap.decode)
+                (JD.field "traces" TraceData.decode)
+    in
+    case JD.decodeString decode data of
+        Err e ->
+            ProgramDataError e
+
+        Ok { sources, traces } ->
+            ProgramDataReceived
+                { sources = sources, traces = traces, hoveredExpr = Nothing }
 
 
 
@@ -83,14 +106,23 @@ type alias Model =
 
 
 type Msg
-    = Msg
+    = HoverExpr CompleteExprData
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update Msg ({ programConfig } as model) =
-    ( model
-    , Cmd.none
-    )
+update msg model =
+    case model of
+        ProgramDataError e ->
+            ( ProgramDataError e
+            , Cmd.none
+            )
+
+        ProgramDataReceived data ->
+            case msg of
+                HoverExpr exprData ->
+                    ( ProgramDataReceived { data | hoveredExpr = Just exprData }
+                    , Cmd.none
+                    )
 
 
 
@@ -99,23 +131,19 @@ update Msg ({ programConfig } as model) =
 
 view : Model -> Html Msg
 view model =
-    case model.programConfig of
-        Ok parsed ->
-            viewTraces parsed
+    case model of
+        ProgramDataReceived { sources, traces, hoveredExpr } ->
+            viewTraces sources traces hoveredExpr
 
-        Err err ->
+        ProgramDataError err ->
             div []
                 [ pre [] [ text <| JD.errorToString err ]
                 ]
 
 
-viewTraces : PC.Config -> Html Msg
-viewTraces { sourceMap, traceData } =
-    let
-        (PC.TraceData traceFrames) =
-            traceData
-    in
-    viewTrace sourceMap (PC.NonInstrumentedFrame traceFrames)
+viewTraces : SourceMap -> TraceData -> Maybe CompleteExprData -> Html Msg
+viewTraces sourceMap (TraceData traceFrames) hoveredExpr =
+    viewTrace sourceMap hoveredExpr (TraceData.NonInstrumentedFrame traceFrames)
 
 
 fmtErr : String -> Html msg
@@ -123,24 +151,30 @@ fmtErr msg =
     pre [ A.style "white-space" "pre-wrap" ] [ text msg ]
 
 
-viewTrace : PC.SourceMap -> PC.TraceFrame -> Html Msg
-viewTrace srcMap traceFrame =
+viewTrace : SourceMap -> Maybe CompleteExprData -> TraceData.Frame -> Html Msg
+viewTrace srcMap hoveredExpr traceFrame =
     case traceFrame of
-        PC.InstrumentedFrame frameId exprTraces ->
+        TraceData.NonInstrumentedFrame childFrames ->
+            frameElem
+                [ text "Non-instrumented frame. "
+                , viewChildFrames srcMap traceFrame hoveredExpr
+                ]
+
+        TraceData.InstrumentedFrame tracedFrame ->
             let
                 maybeFrame =
-                    D.lookup frameId srcMap.frames
+                    D.lookup tracedFrame.id srcMap.frames
 
                 maybeRegionSource =
                     maybeFrame
                         |> Maybe.map .region
-                        |> Maybe.andThen (\region -> PC.lookupRegionSource region srcMap.sources)
+                        |> Maybe.andThen (\region -> SourceMap.lookupRegionSource region srcMap.sources)
             in
             case Maybe.map2 Tuple.pair maybeFrame maybeRegionSource of
                 Just ( frame, src ) ->
                     let
                         content =
-                            case viewFrameTrace srcMap frameId exprTraces of
+                            case viewFrameTrace srcMap hoveredExpr tracedFrame of
                                 Err e ->
                                     div []
                                         [ p [ A.style "font-weight" "bold" ] [ text "Got error:" ]
@@ -152,39 +186,28 @@ viewTrace srcMap traceFrame =
                                 Ok frameTraceHtml ->
                                     frameTraceHtml
                     in
-                    box <|
-                        [ text ("Instrumented frame (id: " ++ toString frameId ++ ")")
+                    frameElem <|
+                        [ text ("Instrumented frame (id: " ++ toString tracedFrame.id ++ ")")
                         , content
-                        , viewChildFrames srcMap traceFrame
+                        , viewChildFrames srcMap traceFrame hoveredExpr
                         ]
 
                 Nothing ->
                     let
                         errMsg =
                             "failed to find frame region! id: "
-                                ++ toString frameId
+                                ++ toString tracedFrame.id
                                 ++ "\nsrcMap: "
                                 ++ toString srcMap
                     in
-                    box [ pre [] [ text errMsg ] ]
-
-        PC.NonInstrumentedFrame childFrames ->
-            let
-                children =
-                    childFrames
-                        |> List.map (viewTrace srcMap)
-            in
-            box
-                [ text "Non-instrumented frame. "
-                , viewChildFrames srcMap traceFrame
-                ]
+                    frameElem [ pre [] [ text errMsg ] ]
 
 
-viewChildFrames : PC.SourceMap -> PC.TraceFrame -> Html Msg
-viewChildFrames srcMap traceFrame =
+viewChildFrames : SourceMap -> TraceData.Frame -> Maybe CompleteExprData -> Html Msg
+viewChildFrames srcMap traceFrame hoveredExprId =
     let
         children =
-            List.map (viewTrace srcMap) (PC.childFrames traceFrame)
+            List.map (viewTrace srcMap hoveredExprId) (TraceData.childFrames traceFrame)
     in
     if children == [] then
         text "No child frames"
@@ -195,8 +218,8 @@ viewChildFrames srcMap traceFrame =
             ]
 
 
-box : List (Html msg) -> Html msg
-box items =
+frameElem : List (Html msg) -> Html msg
+frameElem items =
     li
         [ A.style "border-left" "1px solid green"
         , A.style "padding-left" "3px"
@@ -206,133 +229,42 @@ box items =
 
 
 type Token
-    = TokenExprStart PC.ExprId -- '<span title="[expr value]">'
-    | TokenExprEnd PC.ExprId -- '</span>'
+    = TokenExprStart SourceMap.ExprId -- '<span title="[expr value]">'
+    | TokenExprEnd SourceMap.ExprId -- '</span>'
     | TokenChar Char -- 'x'
 
 
-viewFrameTrace : PC.SourceMap -> PC.FrameId -> D.Dict PC.ExprId PC.TraceExpr -> Result String (Html Msg)
-viewFrameTrace srcMap frameId exprTraces =
-    viewFrameTokens srcMap frameId
-        |> Result.andThen (viewAllFrameTokens exprTraces)
+viewFrameTrace : SourceMap -> Maybe CompleteExprData -> TraceData.InstrumentedFrameData -> Result String (Html Msg)
+viewFrameTrace srcMap hoveredExprId tracedFrame =
+    frameToTokens srcMap tracedFrame.id
+        |> Result.andThen (viewFrameTokens tracedFrame hoveredExprId)
         |> Result.map (pre [])
 
 
-viewAllFrameTokens : D.Dict PC.ExprId PC.TraceExpr -> List Token -> Result String (List (Html Msg))
-viewAllFrameTokens exprTraces tokens =
-    case tokens of
-        (TokenChar ch) :: rest ->
-            viewAllFrameTokens exprTraces rest
-                |> Result.map (\restHtml -> text (String.fromChar ch) :: restHtml)
-
-        (TokenExprStart exprId) :: rest ->
-            case takeTokensInExpr exprTraces exprId rest of
-                Ok ( htmlItems, tokensAfterExpr ) ->
-                    viewAllFrameTokens exprTraces tokensAfterExpr
-                        |> Result.map (\restHtml -> htmlItems ++ restHtml)
-
-                Err e ->
-                    Err (e ++ "\n All tokens were:" ++ toString tokens)
-
-        (TokenExprEnd exprId) :: rest ->
-            Err ("unexpected TokenExprEnd [\n  " ++ (String.join ",\n  " <| List.map toString tokens))
-
-        [] ->
-            Ok []
-
-
-{-| takeTokensInExpr parses a token stream to Html, processing up to the end of `contextExpr`
-(i.e. until the token `TokenExprEnd contextExpr`), and returns a list of Html items in that
-expression as well as the list of remaining tokens.
--}
-takeTokensInExpr : D.Dict PC.ExprId PC.TraceExpr -> PC.ExprId -> List Token -> Result String ( List (Html Msg), List Token )
-takeTokensInExpr exprTraces contextExpr tokens =
-    case tokens of
-        [] ->
-            Err "unexpected end of stream"
-
-        (TokenChar ch) :: restTokens ->
-            takeTokensInExpr exprTraces contextExpr restTokens
-                |> Result.map
-                    (\( restHtmlInContext, tokensAfterContext ) ->
-                        ( text (String.fromChar ch) :: restHtmlInContext
-                        , tokensAfterContext
-                        )
-                    )
-
-        (TokenExprStart hereExprId) :: restTokens ->
-            let
-                exprTitle =
-                    case D.lookup hereExprId exprTraces of
-                        Nothing ->
-                            "Did not find hereExprId ("
-                                ++ toString hereExprId
-                                ++ ") in exprTraces: "
-                                ++ toString exprTraces
-
-                        Just { value } ->
-                            case value of
-                                Just val ->
-                                    PC.valueToString val
-
-                                Nothing ->
-                                    "<no value associated with this expr in trace frame>"
-            in
-            takeTokensInExpr exprTraces hereExprId restTokens
-                |> Result.andThen
-                    (\( htmlItemsHere, tokensAfterHereExpr ) ->
-                        takeTokensInExpr exprTraces contextExpr tokensAfterHereExpr
-                            |> Result.map
-                                (\( htmlItemsAfterHere, tokensAfterContext ) ->
-                                    ( span (A.title exprTitle :: exprStyles) htmlItemsHere
-                                        :: htmlItemsAfterHere
-                                    , tokensAfterContext
-                                    )
-                                )
-                    )
-
-        (TokenExprEnd closingExprId) :: restTokens ->
-            if closingExprId == contextExpr then
-                Ok ( [], restTokens )
-            else
-                Err
-                    ("Unexpected TokenExprEnd: "
-                        ++ toString closingExprId
-                        ++ ", restTokens: "
-                        ++ toString restTokens
-                    )
-
-
-exprStyles : List (Attribute msg)
-exprStyles =
-    [ A.style "border" "1px solid black"
-    , A.style "padding" "1px"
-
-    -- the expressions may span multiple lines, so they properly
-    -- should not be inline-block, but this makes it easier to see them for
-    -- the time being
-    , A.style "display" "inline-block"
-    ]
-
-
-viewFrameTokens : PC.SourceMap -> PC.FrameId -> Result String (List Token)
-viewFrameTokens srcMap frameId =
+frameToTokens : SourceMap -> SourceMap.FrameId -> Result String (List Token)
+frameToTokens srcMap frameId =
     case D.lookup frameId srcMap.frames of
         Nothing ->
             Err "could not find frameId in srcMap.frames"
 
         Just { region, exprRegions } ->
-            case PC.lookupRegionSource region srcMap.sources of
+            case SourceMap.lookupRegionSource region srcMap.sources of
                 Nothing ->
                     Err "could not find frame.region in srcMap.sources"
 
                 Just src ->
-                    Ok (viewFrameSrcTokens region.start src exprRegions)
+                    Ok (frameSrcToTokens region.start src exprRegions)
 
 
-viewFrameSrcTokens : PC.Position -> String -> D.Dict PC.ExprId (List PC.Region) -> List Token
-viewFrameSrcTokens initialPos src exprRegions =
+frameSrcToTokens : SourceMap.Position -> String -> D.Dict SourceMap.ExprId (List SourceMap.Region) -> List Token
+frameSrcToTokens initialPos src exprRegions =
     let
+        rconcat : List (List a) -> List a
+        rconcat =
+            List.reverse >> List.concat
+
+        -- TODO: take finalPos instead of initialPos, to change this to use
+        -- String.foldr and avoid the double-reversal
         ( _, reversedAssociation ) =
             String.foldl
                 (\char ( position, accum ) ->
@@ -348,11 +280,11 @@ viewFrameSrcTokens initialPos src exprRegions =
                                 }
 
                         starts =
-                            PC.exprsStartingHere position exprRegions
+                            SourceMap.exprsStartingAt position exprRegions
                                 |> List.map TokenExprStart
 
                         ends =
-                            PC.exprsEndingHere nextPos exprRegions
+                            SourceMap.exprsEndingAt nextPos exprRegions
                                 |> List.map TokenExprEnd
                     in
                     ( nextPos
@@ -370,6 +302,151 @@ viewFrameSrcTokens initialPos src exprRegions =
     List.reverse reversedAssociation
 
 
-rconcat : List (List a) -> List a
-rconcat =
-    List.reverse >> List.concat
+viewFrameTokens : TraceData.InstrumentedFrameData -> Maybe CompleteExprData -> List Token -> Result String (List (Html Msg))
+viewFrameTokens frameTrace hoveredExpr tokens =
+    case tokens of
+        (TokenChar ch) :: rest ->
+            viewFrameTokens frameTrace hoveredExpr rest
+                |> Result.map (\restHtml -> text (String.fromChar ch) :: restHtml)
+
+        (TokenExprStart exprId) :: rest ->
+            let
+                exprRenderingContext =
+                    { frameTrace = frameTrace
+                    , currentExpr = exprId
+                    , hoveredExpr = hoveredExpr
+                    }
+            in
+            case viewExprTokens exprRenderingContext rest of
+                Ok ( htmlItems, tokensAfterExpr ) ->
+                    viewFrameTokens frameTrace hoveredExpr tokensAfterExpr
+                        |> Result.map (\restHtml -> htmlItems ++ restHtml)
+
+                Err e ->
+                    Err (e ++ "\n All tokens were:" ++ toString tokens)
+
+        (TokenExprEnd exprId) :: rest ->
+            Err ("unexpected TokenExprEnd [\n  " ++ (String.join ",\n  " <| List.map toString tokens))
+
+        [] ->
+            Ok []
+
+
+type alias ExprRenderingContext =
+    { hoveredExpr : Maybe CompleteExprData
+    , currentExpr : SourceMap.ExprId
+    , frameTrace : TraceData.InstrumentedFrameData
+    }
+
+
+{-| viewExprTokens parses a token stream to Html, processing up to the end of
+`context.currentExpr` (i.e. until the token `TokenExprEnd context.currentExpr`),
+and returns a list of Html items in that expression as well as the list of unconsumed tokens.
+-}
+viewExprTokens : ExprRenderingContext -> List Token -> Result String ( List (Html Msg), List Token )
+viewExprTokens context tokens =
+    case tokens of
+        [] ->
+            Err "unexpected end of stream"
+
+        (TokenChar ch) :: restTokens ->
+            viewExprTokens context restTokens
+                |> Result.map
+                    (\( restHtmlInContext, tokensAfterContext ) ->
+                        ( text (String.fromChar ch) :: restHtmlInContext
+                        , tokensAfterContext
+                        )
+                    )
+
+        (TokenExprStart hereExprId) :: restTokens ->
+            let
+                ( maybeExprInfo, exprTitle ) =
+                    case D.lookup hereExprId context.frameTrace.exprs of
+                        Nothing ->
+                            ( Nothing
+                            , "Did not find hereExprId ("
+                                ++ toString hereExprId
+                                ++ ") in exprTraces: "
+                                ++ toString context.frameTrace.exprs
+                            )
+
+                        Just expr ->
+                            case expr.value of
+                                Just val ->
+                                    ( Just ( context.frameTrace.id, hereExprId, expr )
+                                    , TraceData.valueToString val
+                                    )
+
+                                Nothing ->
+                                    ( Nothing
+                                    , "<no value associated with this expr in trace frame>"
+                                    )
+
+                isHovered =
+                    case context.hoveredExpr of
+                        Just ( frameId, id, _ ) ->
+                            frameId == context.frameTrace.id && id == hereExprId
+
+                        Nothing ->
+                            False
+            in
+            viewExprTokens { context | currentExpr = hereExprId } restTokens
+                |> Result.andThen
+                    (\( htmlItemsHere, tokensAfterHereExpr ) ->
+                        viewExprTokens context tokensAfterHereExpr
+                            |> Result.map
+                                (\( htmlItemsAfterHere, tokensAfterContext ) ->
+                                    ( exprElem maybeExprInfo exprTitle isHovered htmlItemsHere
+                                        :: htmlItemsAfterHere
+                                    , tokensAfterContext
+                                    )
+                                )
+                    )
+
+        (TokenExprEnd closingExprId) :: restTokens ->
+            if closingExprId == context.currentExpr then
+                Ok ( [], restTokens )
+            else
+                Err
+                    ("Unexpected TokenExprEnd: "
+                        ++ toString closingExprId
+                        ++ ", restTokens: "
+                        ++ toString restTokens
+                    )
+
+
+exprElem :
+    Maybe ( SourceMap.FrameId, SourceMap.ExprId, TraceData.Expr )
+    -> String
+    -> Bool
+    -> List (Html Msg)
+    -> Html Msg
+exprElem maybeExprData title isHovered children =
+    let
+        handleHover =
+            case maybeExprData of
+                Just exprData ->
+                    [ E.stopPropagationOn "mouseover"
+                        (JD.succeed ( HoverExpr exprData, True ))
+                    ]
+
+                Nothing ->
+                    []
+
+        coloring =
+            if isHovered then
+                [ A.style "background-color" "rgb(230, 230, 200)" ]
+            else
+                []
+    in
+    span
+        (coloring
+            ++ handleHover
+            ++ [ A.title title
+               , A.classList
+                    [ ( "expression", True )
+                    , ( "expression--hovered", isHovered )
+                    ]
+               ]
+        )
+        children
