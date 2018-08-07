@@ -30,7 +30,7 @@ data Error
   | Pattern [Pattern.Error]
   | Docs Docs.Error
 
--- FIXME
+-- TODO: remove this
 instance Show Error where
   show _ = "(Compiler.Error)"
 
