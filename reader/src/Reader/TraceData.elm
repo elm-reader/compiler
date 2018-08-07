@@ -56,7 +56,7 @@ decodeFrameTrace =
         decodeInstrumented =
             JD.map2 (\id exprs -> InstrumentedFrame { id = id, exprs = exprs })
                 (JD.field "id" SourceMap.decodeFrameId)
-                (JD.field "exprs" <| Dict.decode SourceMap.compareExprIds ( "id", SourceMap.decodeExprId ) ( "expr", decExpr ))
+                (JD.field "exprs" <| Dict.decode ( "id", SourceMap.decodeExprId ) ( "expr", decExpr ))
 
         decodeNonInstrumented =
             JD.map NonInstrumentedFrame

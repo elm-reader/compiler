@@ -66,8 +66,8 @@ keyValuePairs (Dict pairs) =
     pairs
 
 
-decode : (key -> key -> Order) -> ( String, JD.Decoder key ) -> ( String, JD.Decoder value ) -> JD.Decoder (Dict key value)
-decode comparer ( keyName, decodeKey ) ( valName, decodeVal ) =
+decode : ( String, JD.Decoder key ) -> ( String, JD.Decoder value ) -> JD.Decoder (Dict key value)
+decode ( keyName, decodeKey ) ( valName, decodeVal ) =
     let
         decodeEntry =
             JD.map2 Tuple.pair

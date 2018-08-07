@@ -41,8 +41,8 @@ emptySourceMap =
 decode : JD.Decoder SourceMap
 decode =
     JD.map2 SourceMap
-        (JD.field "frames" <| Dict.decode compareFrameIds ( "id", decodeFrameId ) ( "frame", decodeFrame ))
-        (JD.field "sources" <| Dict.decode compareModuleIds ( "module", decodeModuleId ) ( "source", JD.string ))
+        (JD.field "frames" <| Dict.decode ( "id", decodeFrameId ) ( "frame", decodeFrame ))
+        (JD.field "sources" <| Dict.decode ( "module", decodeModuleId ) ( "source", JD.string ))
 
 
 
@@ -99,8 +99,8 @@ decodeFrame =
     in
     JD.map3 Frame
         (JD.field "region" decodeRegion)
-        (JD.field "expr_regions" <| Dict.decode compareExprIds ( "id", decodeExprId ) ( "regions", JD.list decodeRegion ))
-        (JD.field "expr_names" <| Dict.decode compareExprIds ( "id", decodeExprId ) ( "qualified_name", decodeExprName ))
+        (JD.field "expr_regions" <| Dict.decode ( "id", decodeExprId ) ( "regions", JD.list decodeRegion ))
+        (JD.field "expr_names" <| Dict.decode ( "id", decodeExprId ) ( "qualified_name", decodeExprName ))
 
 
 
