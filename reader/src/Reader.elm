@@ -23,9 +23,10 @@ import Html exposing (..)
 import Html.Attributes as A
 import Html.Events as E
 import Json.Decode as JD
-import Reader.Dict as D
+import Reader.Dict as Dict exposing (Dict)
 import Reader.SourceMap as SourceMap exposing (SourceMap)
 import Reader.TraceData as TraceData exposing (TraceData(..))
+import Reader.TraceData.Value as Value exposing (Value)
 import Reader.Utils as Utils
 
 
@@ -163,7 +164,7 @@ viewTrace srcMap hoveredExpr traceFrame =
         TraceData.InstrumentedFrame tracedFrame ->
             let
                 maybeFrame =
-                    D.lookup tracedFrame.id srcMap.frames
+                    Dict.lookup tracedFrame.id srcMap.frames
 
                 maybeRegionSource =
                     maybeFrame
@@ -243,7 +244,7 @@ viewFrameTrace srcMap hoveredExprId tracedFrame =
 
 frameToTokens : SourceMap -> SourceMap.FrameId -> Result String (List Token)
 frameToTokens srcMap frameId =
-    case D.lookup frameId srcMap.frames of
+    case Dict.lookup frameId srcMap.frames of
         Nothing ->
             Err "could not find frameId in srcMap.frames"
 
@@ -256,7 +257,7 @@ frameToTokens srcMap frameId =
                     Ok (frameSrcToTokens region.start src exprRegions)
 
 
-frameSrcToTokens : SourceMap.Position -> String -> D.Dict SourceMap.ExprId (List SourceMap.Region) -> List Token
+frameSrcToTokens : SourceMap.Position -> String -> Dict SourceMap.ExprId (List SourceMap.Region) -> List Token
 frameSrcToTokens initialPos src exprRegions =
     let
         rconcat : List (List a) -> List a
@@ -361,7 +362,7 @@ viewExprTokens context tokens =
         (TokenExprStart hereExprId) :: restTokens ->
             let
                 ( maybeExprInfo, exprTitle ) =
-                    case D.lookup hereExprId context.frameTrace.exprs of
+                    case Dict.lookup hereExprId context.frameTrace.exprs of
                         Nothing ->
                             ( Nothing
                             , "Did not find hereExprId ("
@@ -374,7 +375,7 @@ viewExprTokens context tokens =
                             case expr.value of
                                 Just val ->
                                     ( Just ( context.frameTrace.id, hereExprId, expr )
-                                    , TraceData.valueToString val
+                                    , Value.toString val
                                     )
 
                                 Nothing ->
@@ -384,8 +385,21 @@ viewExprTokens context tokens =
 
                 isHovered =
                     case context.hoveredExpr of
-                        Just ( frameId, id, _ ) ->
-                            frameId == context.frameTrace.id && id == hereExprId
+                        Just ( frameId, id, { value } ) ->
+                            let
+                                hereValueMaybe =
+                                    Dict.lookup id context.frameTrace.exprs
+                                        |> Maybe.andThen .value
+
+                                sameValue =
+                                    case ( value, hereValueMaybe ) of
+                                        ( Just hoveredVal, Just hereVal ) ->
+                                            Value.isEqual hoveredVal hereVal
+
+                                        ( _, _ ) ->
+                                            False
+                            in
+                            frameId == context.frameTrace.id && id == hereExprId && sameValue
 
                         Nothing ->
                             False
