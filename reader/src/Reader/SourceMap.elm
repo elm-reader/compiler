@@ -18,6 +18,7 @@ module Reader.SourceMap
         , decodeRegion
         , exprsEndingAt
         , exprsStartingAt
+        , frameIdToString
         , lookupRegionSource
         )
 
@@ -62,6 +63,11 @@ decodeFrameId =
         (JD.field "module" decodeModuleId)
         (JD.field "def" JD.string)
         (JD.field "frame_index" JD.int)
+
+
+frameIdToString : FrameId -> String
+frameIdToString { mod, def, frameIndex } =
+    moduleIdToString mod ++ "." ++ def ++ " (subframe #" ++ String.fromInt frameIndex ++ ")"
 
 
 compareFrameIds f1 f2 =
@@ -138,6 +144,11 @@ decodePackageId =
     JD.map PackageId JD.string
 
 
+packageIdToString : PackageId -> String
+packageIdToString (PackageId str) =
+    str
+
+
 
 -- MODULE ID
 
@@ -156,6 +167,11 @@ compareModuleIds m1 m2 =
 
         order ->
             order
+
+
+moduleIdToString : ModuleId -> String
+moduleIdToString { package, mod } =
+    packageIdToString package ++ "." ++ mod
 
 
 decodeModuleId : JD.Decoder ModuleId

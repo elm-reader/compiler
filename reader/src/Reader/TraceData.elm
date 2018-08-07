@@ -6,6 +6,7 @@ module Reader.TraceData
         , TraceData(..)
         , childFrames
         , decode
+        , isFrameInstrumented
         )
 
 import Debug
@@ -41,6 +42,16 @@ type alias InstrumentedFrameData =
     { id : SourceMap.FrameId
     , exprs : Dict SourceMap.ExprId Expr
     }
+
+
+isFrameInstrumented : Frame -> Bool
+isFrameInstrumented frame =
+    case frame of
+        InstrumentedFrame _ ->
+            True
+
+        NonInstrumentedFrame _ ->
+            False
 
 
 decodeFrameTrace : JD.Decoder Frame

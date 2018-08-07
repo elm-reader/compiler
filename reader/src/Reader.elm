@@ -24,6 +24,7 @@ import Html.Attributes as A
 import Html.Events as E
 import Json.Decode as JD
 import Reader.Dict as Dict exposing (Dict)
+import Reader.Flex as Flex
 import Reader.SourceMap as SourceMap exposing (SourceMap)
 import Reader.TraceData as TraceData exposing (TraceData(..))
 import Reader.TraceData.Value as Value exposing (Value)
@@ -69,13 +70,17 @@ main =
 -- MODEL
 
 
-type Model
+type ModelConsideringInit
     = ProgramDataError JD.Error
-    | ProgramDataReceived
-        { sources : SourceMap
-        , traces : TraceData
-        , hoveredExpr : Maybe CompleteExprData
-        }
+    | ProgramDataReceived Model
+
+
+type alias Model =
+    { sources : SourceMap
+    , traces : TraceData
+    , hoveredExpr : Maybe CompleteExprData
+    , selectedFrame : Maybe TraceData.InstrumentedFrameData
+    }
 
 
 type alias CompleteExprData =
@@ -85,7 +90,7 @@ type alias CompleteExprData =
 {-| parseConfig is used by Reader.js to initialize the model from
 the JSON containing source map and tracing data.
 -}
-parseConfig : String -> Model
+parseConfig : String -> ModelConsideringInit
 parseConfig data =
     let
         decode =
@@ -99,7 +104,11 @@ parseConfig data =
 
         Ok { sources, traces } ->
             ProgramDataReceived
-                { sources = sources, traces = traces, hoveredExpr = Nothing }
+                { sources = sources
+                , traces = traces
+                , hoveredExpr = Nothing
+                , selectedFrame = Nothing
+                }
 
 
 
@@ -108,10 +117,11 @@ parseConfig data =
 
 type Msg
     = HoverExpr CompleteExprData
+    | SelectFrame TraceData.InstrumentedFrameData
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+updateConsideringInit : Msg -> ModelConsideringInit -> ( ModelConsideringInit, Cmd Msg )
+updateConsideringInit msg model =
     case model of
         ProgramDataError e ->
             ( ProgramDataError e
@@ -119,22 +129,38 @@ update msg model =
             )
 
         ProgramDataReceived data ->
-            case msg of
-                HoverExpr exprData ->
-                    ( ProgramDataReceived { data | hoveredExpr = Just exprData }
-                    , Cmd.none
-                    )
+            let
+                ( newData, cmd ) =
+                    update msg data
+            in
+            ( ProgramDataReceived newData
+            , cmd
+            )
+
+
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
+    case msg of
+        HoverExpr exprData ->
+            ( { model | hoveredExpr = Just exprData }
+            , Cmd.none
+            )
+
+        SelectFrame frameTrace ->
+            ( { model | selectedFrame = Just frameTrace }
+            , Cmd.none
+            )
 
 
 
 -- VIEW
 
 
-view : Model -> Html Msg
-view model =
-    case model of
-        ProgramDataReceived { sources, traces, hoveredExpr } ->
-            viewTraces sources traces hoveredExpr
+viewConsideringInit : ModelConsideringInit -> Html Msg
+viewConsideringInit generalModel =
+    case generalModel of
+        ProgramDataReceived model ->
+            view model
 
         ProgramDataError err ->
             div []
@@ -142,9 +168,16 @@ view model =
                 ]
 
 
-viewTraces : SourceMap -> TraceData -> Maybe CompleteExprData -> Html Msg
-viewTraces sourceMap (TraceData traceFrames) hoveredExpr =
-    viewTrace sourceMap hoveredExpr (TraceData.NonInstrumentedFrame traceFrames)
+view : Model -> Html Msg
+view { sources, traces, hoveredExpr, selectedFrame } =
+    Flex.column
+        [ h2 [] [ text "Elm Reader" ]
+        , Flex.row
+            [ viewOutlineSidebar (A.style "flex" "2") traces
+            , viewTraceWindow (A.style "flex" "5") sources hoveredExpr selectedFrame
+            , viewDetailsSidebar (A.style "flex" "3") hoveredExpr
+            ]
+        ]
 
 
 fmtErr : String -> Html msg
@@ -152,11 +185,87 @@ fmtErr msg =
     pre [ A.style "white-space" "pre-wrap" ] [ text msg ]
 
 
+
+-- VIEW: viewing a nav sidebar
+
+
+viewOutlineSidebar : Attribute Msg -> TraceData -> Html Msg
+viewOutlineSidebar width (TraceData frames) =
+    let
+        instrumented =
+            frames
+                |> List.filterMap
+                    (\f ->
+                        case f of
+                            TraceData.InstrumentedFrame data ->
+                                Just data
+
+                            TraceData.NonInstrumentedFrame _ ->
+                                Nothing
+                    )
+
+        numNonInstrumented =
+            List.length frames - List.length instrumented
+
+        viewFrameLink frame =
+            a
+                [ A.href "#"
+                , E.onClick (SelectFrame frame)
+                ]
+                [ text (SourceMap.frameIdToString frame.id) ]
+    in
+    Flex.columnWith [ width ] <|
+        List.map viewFrameLink instrumented
+            ++ [ text (String.fromInt numNonInstrumented ++ " noninstrumented frames")
+               ]
+
+
+
+-- VIEW: viewing a sidebar with information about the frames
+
+
+viewDetailsSidebar : Attribute Msg -> Maybe CompleteExprData -> Html Msg
+viewDetailsSidebar width maybeExpr =
+    let
+        container =
+            div [ width ]
+    in
+    case maybeExpr of
+        Nothing ->
+            container [ text "No expression selected" ]
+
+        Just ( frameId, id, expr ) ->
+            case expr.value of
+                Nothing ->
+                    container [ text "Expression has no (recorded) value" ]
+
+                Just val ->
+                    container [ text (Value.toString val) ]
+
+
+
+-- VIEW: viewing a stack of frames
+
+
+viewTraceWindow : Attribute Msg -> SourceMap -> Maybe CompleteExprData -> Maybe TraceData.InstrumentedFrameData -> Html Msg
+viewTraceWindow width sources hoveredExpr maybeTrace =
+    let
+        container =
+            div [ width ]
+    in
+    case maybeTrace of
+        Nothing ->
+            container [ text "Select a frame to view on the left" ]
+
+        Just frameTrace ->
+            container [ viewTrace sources hoveredExpr (TraceData.InstrumentedFrame frameTrace) ]
+
+
 viewTrace : SourceMap -> Maybe CompleteExprData -> TraceData.Frame -> Html Msg
 viewTrace srcMap hoveredExpr traceFrame =
     case traceFrame of
         TraceData.NonInstrumentedFrame childFrames ->
-            frameElem
+            frameContainerElem
                 [ text "Non-instrumented frame. "
                 , viewChildFrames srcMap traceFrame hoveredExpr
                 ]
@@ -187,7 +296,7 @@ viewTrace srcMap hoveredExpr traceFrame =
                                 Ok frameTraceHtml ->
                                     frameTraceHtml
                     in
-                    frameElem <|
+                    frameContainerElem <|
                         [ text ("Instrumented frame (id: " ++ toString tracedFrame.id ++ ")")
                         , content
                         , viewChildFrames srcMap traceFrame hoveredExpr
@@ -201,14 +310,18 @@ viewTrace srcMap hoveredExpr traceFrame =
                                 ++ "\nsrcMap: "
                                 ++ toString srcMap
                     in
-                    frameElem [ pre [] [ text errMsg ] ]
+                    frameContainerElem [ pre [] [ text errMsg ] ]
 
 
 viewChildFrames : SourceMap -> TraceData.Frame -> Maybe CompleteExprData -> Html Msg
 viewChildFrames srcMap traceFrame hoveredExprId =
     let
+        intoListItem elem =
+            li [] [ elem ]
+
         children =
-            List.map (viewTrace srcMap hoveredExprId) (TraceData.childFrames traceFrame)
+            TraceData.childFrames traceFrame
+                |> List.map (viewTrace srcMap hoveredExprId >> intoListItem)
     in
     if children == [] then
         text "No child frames"
@@ -219,9 +332,9 @@ viewChildFrames srcMap traceFrame hoveredExprId =
             ]
 
 
-frameElem : List (Html msg) -> Html msg
-frameElem items =
-    li
+frameContainerElem : List (Html msg) -> Html msg
+frameContainerElem items =
+    div
         [ A.style "border-left" "1px solid green"
         , A.style "padding-left" "3px"
         , A.style "margin-bottom" "6px"
@@ -229,10 +342,8 @@ frameElem items =
         items
 
 
-type Token
-    = TokenExprStart SourceMap.ExprId -- '<span title="[expr value]">'
-    | TokenExprEnd SourceMap.ExprId -- '</span>'
-    | TokenChar Char -- 'x'
+
+-- VIEW: viewing the contents of a frame
 
 
 viewFrameTrace : SourceMap -> Maybe CompleteExprData -> TraceData.InstrumentedFrameData -> Result String (Html Msg)
@@ -240,6 +351,12 @@ viewFrameTrace srcMap hoveredExprId tracedFrame =
     frameToTokens srcMap tracedFrame.id
         |> Result.andThen (viewFrameTokens tracedFrame hoveredExprId)
         |> Result.map (pre [])
+
+
+type Token
+    = TokenExprStart SourceMap.ExprId -- '<span title="[expr value]">'
+    | TokenExprEnd SourceMap.ExprId -- '</span>'
+    | TokenChar Char -- 'x'
 
 
 frameToTokens : SourceMap -> SourceMap.FrameId -> Result String (List Token)

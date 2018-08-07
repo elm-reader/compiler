@@ -6,7 +6,7 @@ import Browser exposing (element)
 import Platform.Sub as Sub exposing (none)
 import Platform.Cmd as Cmd exposing (none)
 
-import Reader exposing (update, view, parseConfig)
+import Reader exposing (updateConsideringInit, viewConsideringInit, parseConfig)
 
 */
 
@@ -20,8 +20,8 @@ var _Reader_main = F2(function (decoder, debugData)
         __Reader_parseConfig(JSON.stringify(programData)),
         __Cmd_none);
     },
-    update: __Reader_update,
-    view: __Reader_view,
+    update: __Reader_updateConsideringInit,
+    view: __Reader_viewConsideringInit,
     subscriptions: function () { return __Sub_none; }
   })(decoder)(debugData);
 });
