@@ -22,27 +22,27 @@ module Reader.SourceMap
         )
 
 import Json.Decode as JD
-import Reader.Dict as D
+import Reader.Dict as Dict exposing (Dict)
 
 
 -- SOURCE MAPS
 
 
 type alias SourceMap =
-    { frames : D.Dict FrameId Frame
-    , sources : D.Dict ModuleId String
+    { frames : Dict FrameId Frame
+    , sources : Dict ModuleId String
     }
 
 
 emptySourceMap =
-    SourceMap D.empty D.empty
+    SourceMap Dict.empty Dict.empty
 
 
 decode : JD.Decoder SourceMap
 decode =
     JD.map2 SourceMap
-        (JD.field "frames" <| D.decode compareFrameIds ( "id", decodeFrameId ) ( "frame", decodeFrame ))
-        (JD.field "sources" <| D.decode compareModuleIds ( "module", decodeModuleId ) ( "source", JD.string ))
+        (JD.field "frames" <| Dict.decode compareFrameIds ( "id", decodeFrameId ) ( "frame", decodeFrame ))
+        (JD.field "sources" <| Dict.decode compareModuleIds ( "module", decodeModuleId ) ( "source", JD.string ))
 
 
 
@@ -84,8 +84,8 @@ compareFrameIds f1 f2 =
 
 type alias Frame =
     { region : Region
-    , exprRegions : D.Dict ExprId (List Region)
-    , exprNames : D.Dict ExprId ( ModuleId, Name )
+    , exprRegions : Dict ExprId (List Region)
+    , exprNames : Dict ExprId ( ModuleId, Name )
     }
 
 
@@ -99,8 +99,8 @@ decodeFrame =
     in
     JD.map3 Frame
         (JD.field "region" decodeRegion)
-        (JD.field "expr_regions" <| D.decode compareExprIds ( "id", decodeExprId ) ( "regions", JD.list decodeRegion ))
-        (JD.field "expr_names" <| D.decode compareExprIds ( "id", decodeExprId ) ( "qualified_name", decodeExprName ))
+        (JD.field "expr_regions" <| Dict.decode compareExprIds ( "id", decodeExprId ) ( "regions", JD.list decodeRegion ))
+        (JD.field "expr_names" <| Dict.decode compareExprIds ( "id", decodeExprId ) ( "qualified_name", decodeExprName ))
 
 
 
@@ -227,7 +227,7 @@ isPositionInRegion pos { start, end } =
 lookupPositionExprIds : Frame -> Position -> List ExprId
 lookupPositionExprIds { exprRegions } pos =
     exprRegions
-        |> D.keyValuePairs
+        |> Dict.keyValuePairs
         |> List.filterMap
             (\( exprId, regions ) ->
                 if List.any (isPositionInRegion pos) regions then
@@ -237,7 +237,7 @@ lookupPositionExprIds { exprRegions } pos =
             )
 
 
-lookupRegionSource : Region -> D.Dict ModuleId String -> Maybe String
+lookupRegionSource : Region -> Dict ModuleId String -> Maybe String
 lookupRegionSource { mod, start, end } sources =
     let
         -- nthLine returns the character position at which the nth line starts
@@ -257,7 +257,7 @@ lookupRegionSource { mod, start, end } sources =
                 Maybe.map ((+) 1) lineBreakPos
 
         modSource =
-            D.lookup mod sources
+            Dict.lookup mod sources
 
         startPos =
             modSource
@@ -281,7 +281,7 @@ lookupRegionSource { mod, start, end } sources =
 {-| exprsStartingAt returns a list of the IDs of expressions with a region
 starting at `pos`, in increasing order of the length of the associated region.
 -}
-exprsStartingAt : Position -> D.Dict ExprId (List Region) -> List ExprId
+exprsStartingAt : Position -> Dict ExprId (List Region) -> List ExprId
 exprsStartingAt pos exprRegions =
     exprsWithARegionFulfilling (\region -> region.start == pos) exprRegions
         |> List.sortWith
@@ -292,7 +292,7 @@ exprsStartingAt pos exprRegions =
 {-| exprsEndingAt returns a list of the IDs of expressions with a region
 ending at `pos`, in decreasing order of the length of the associated region.
 -}
-exprsEndingAt : Position -> D.Dict ExprId (List Region) -> List ExprId
+exprsEndingAt : Position -> Dict ExprId (List Region) -> List ExprId
 exprsEndingAt pos exprRegions =
     exprsWithARegionFulfilling (\region -> region.end == pos) exprRegions
         |> List.sortWith
@@ -302,10 +302,10 @@ exprsEndingAt pos exprRegions =
 
 {-| Helper function. See exprsStartingAt and exprsEndingAt
 -}
-exprsWithARegionFulfilling : (Region -> Bool) -> D.Dict ExprId (List Region) -> List ( ExprId, Region )
+exprsWithARegionFulfilling : (Region -> Bool) -> Dict ExprId (List Region) -> List ( ExprId, Region )
 exprsWithARegionFulfilling condition exprRegions =
     exprRegions
-        |> D.keyValuePairs
+        |> Dict.keyValuePairs
         |> List.filterMap
             (\( exprId, regions ) ->
                 case List.filter condition regions of

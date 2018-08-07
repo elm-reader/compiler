@@ -12,7 +12,7 @@ module Reader.TraceData
 import Debug
 import Json.Decode as JD
 import Json.Encode as JE
-import Reader.Dict as D
+import Reader.Dict as Dict exposing (Dict)
 import Reader.SourceMap as SourceMap exposing (SourceMap)
 import Tuple
 
@@ -40,7 +40,7 @@ type Frame
 
 type alias InstrumentedFrameData =
     { id : SourceMap.FrameId
-    , exprs : D.Dict SourceMap.ExprId Expr
+    , exprs : Dict SourceMap.ExprId Expr
     }
 
 
@@ -56,7 +56,7 @@ decodeFrameTrace =
         decodeInstrumented =
             JD.map2 (\id exprs -> InstrumentedFrame { id = id, exprs = exprs })
                 (JD.field "id" SourceMap.decodeFrameId)
-                (JD.field "exprs" <| D.decode SourceMap.compareExprIds ( "id", SourceMap.decodeExprId ) ( "expr", decExpr ))
+                (JD.field "exprs" <| Dict.decode SourceMap.compareExprIds ( "id", SourceMap.decodeExprId ) ( "expr", decExpr ))
 
         decodeNonInstrumented =
             JD.map NonInstrumentedFrame
@@ -69,7 +69,7 @@ childFrames : Frame -> List Frame
 childFrames frameTrace =
     case frameTrace of
         InstrumentedFrame { exprs } ->
-            D.values exprs
+            Dict.values exprs
                 |> List.map .childFrame
                 |> filterListForJust
 
