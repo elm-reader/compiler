@@ -79,8 +79,19 @@ type alias Model =
     { sources : SourceMap
     , traces : TraceData
     , hoveredExpr : Maybe CompleteExprData
-    , selectedFrame : Maybe TraceData.InstrumentedFrameData
+    , selectedFrames : Maybe SelectedFrames
     }
+
+
+type alias SelectedFrames =
+    -- child frame list ordered from top to bottom
+    ( TraceData.InstrumentedFrameData
+    , List
+        { frame : TraceData.Frame
+        , parentExpr : SourceMap.ExprId
+        , parentFrame : TraceData.FrameId
+        }
+    )
 
 
 type alias CompleteExprData =
@@ -107,7 +118,7 @@ parseConfig data =
                 { sources = sources
                 , traces = traces
                 , hoveredExpr = Nothing
-                , selectedFrame = Nothing
+                , selectedFrames = Nothing
                 }
 
 
@@ -118,6 +129,11 @@ parseConfig data =
 type Msg
     = HoverExpr CompleteExprData
     | SelectFrame TraceData.InstrumentedFrameData
+    | OpenChildFrame
+        { parentExpr : SourceMap.ExprId
+        , frame : TraceData.Frame
+        , parentFrame : TraceData.FrameId
+        }
 
 
 updateConsideringInit : Msg -> ModelConsideringInit -> ( ModelConsideringInit, Cmd Msg )
@@ -130,26 +146,48 @@ updateConsideringInit msg model =
 
         ProgramDataReceived data ->
             let
-                ( newData, cmd ) =
+                newData =
                     update msg data
             in
             ( ProgramDataReceived newData
-            , cmd
+            , Cmd.none
             )
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+update : Msg -> Model -> Model
 update msg model =
     case msg of
         HoverExpr exprData ->
-            ( { model | hoveredExpr = Just exprData }
-            , Cmd.none
-            )
+            { model | hoveredExpr = Just exprData }
 
         SelectFrame frameTrace ->
-            ( { model | selectedFrame = Just frameTrace }
-            , Cmd.none
-            )
+            { model | selectedFrames = Just ( frameTrace, [] ) }
+
+        OpenChildFrame childFrameInfo ->
+            case model.selectedFrames of
+                Nothing ->
+                    Debug.log "Unexpected OpenChildFrame msg!" model
+
+                Just ( topFrame, children ) ->
+                    let
+                        addFrame frames =
+                            case frames of
+                                [] ->
+                                    [ childFrameInfo ]
+
+                                f :: fs ->
+                                    if TraceData.frameIdOf f.frame == childFrameInfo.parentFrame then
+                                        [ f, childFrameInfo ]
+                                    else
+                                        f :: addFrame fs
+
+                        newSelectedFrames =
+                            if topFrame.runtimeId == childFrameInfo.parentFrame then
+                                Just ( topFrame, [ childFrameInfo ] )
+                            else
+                                Just ( topFrame, addFrame children )
+                    in
+                    { model | selectedFrames = newSelectedFrames }
 
 
 
@@ -169,13 +207,13 @@ viewConsideringInit generalModel =
 
 
 view : Model -> Html Msg
-view { sources, traces, hoveredExpr, selectedFrame } =
+view { sources, traces, hoveredExpr, selectedFrames } =
     Flex.column
         [ h2 [] [ text "Elm Reader" ]
         , Flex.row
             [ viewOutlineSidebar (A.style "flex" "2") traces
-            , viewTraceWindow (A.style "flex" "5") sources hoveredExpr selectedFrame
-            , viewDetailsSidebar (A.style "flex" "3") hoveredExpr
+            , viewTraceWindow (A.style "flex" "5") sources hoveredExpr selectedFrames
+            , viewDetailsSidebar [ A.style "flex" "3" ] hoveredExpr
             ]
         ]
 
@@ -200,7 +238,7 @@ viewOutlineSidebar width (TraceData frames) =
                             TraceData.InstrumentedFrame data ->
                                 Just data
 
-                            TraceData.NonInstrumentedFrame _ ->
+                            TraceData.NonInstrumentedFrame _ _ ->
                                 Nothing
                     )
 
@@ -212,7 +250,7 @@ viewOutlineSidebar width (TraceData frames) =
                 [ A.href "#"
                 , E.onClick (SelectFrame frame)
                 ]
-                [ text (SourceMap.frameIdToString frame.id) ]
+                [ text (SourceMap.frameIdToString frame.sourceId) ]
     in
     Flex.columnWith [ width ] <|
         List.map viewFrameLink instrumented
@@ -224,11 +262,11 @@ viewOutlineSidebar width (TraceData frames) =
 -- VIEW: viewing a sidebar with information about the frames
 
 
-viewDetailsSidebar : Attribute Msg -> Maybe CompleteExprData -> Html Msg
-viewDetailsSidebar width maybeExpr =
+viewDetailsSidebar : List (Attribute Msg) -> Maybe CompleteExprData -> Html Msg
+viewDetailsSidebar layout maybeExpr =
     let
         container =
-            div [ width ]
+            div layout
     in
     case maybeExpr of
         Nothing ->
@@ -247,7 +285,12 @@ viewDetailsSidebar width maybeExpr =
 -- VIEW: viewing a stack of frames
 
 
-viewTraceWindow : Attribute Msg -> SourceMap -> Maybe CompleteExprData -> Maybe TraceData.InstrumentedFrameData -> Html Msg
+viewTraceWindow :
+    Attribute Msg
+    -> SourceMap
+    -> Maybe CompleteExprData
+    -> Maybe SelectedFrames
+    -> Html Msg
 viewTraceWindow width sources hoveredExpr maybeTrace =
     let
         container =
@@ -257,23 +300,32 @@ viewTraceWindow width sources hoveredExpr maybeTrace =
         Nothing ->
             container [ text "Select a frame to view on the left" ]
 
-        Just frameTrace ->
-            container [ viewTrace sources hoveredExpr (TraceData.InstrumentedFrame frameTrace) ]
+        Just ( frameTrace, childFrames ) ->
+            let
+                childTraces =
+                    childFrames
+                        |> List.map (.frame >> viewTrace sources hoveredExpr)
+            in
+            container (viewTraceInstrumented sources hoveredExpr frameTrace :: childTraces)
+
+
+viewTraceInstrumented sources hoveredExpr trace =
+    viewTrace sources hoveredExpr (TraceData.InstrumentedFrame trace)
 
 
 viewTrace : SourceMap -> Maybe CompleteExprData -> TraceData.Frame -> Html Msg
 viewTrace srcMap hoveredExpr traceFrame =
     case traceFrame of
-        TraceData.NonInstrumentedFrame childFrames ->
+        TraceData.NonInstrumentedFrame runtimeId childFrames ->
             frameContainerElem
-                [ text "Non-instrumented frame. "
+                [ text ("Non-instrumented frame (#" ++ String.fromInt runtimeId ++ ").")
                 , viewChildFrames srcMap traceFrame hoveredExpr
                 ]
 
         TraceData.InstrumentedFrame tracedFrame ->
             let
                 maybeFrame =
-                    Dict.lookup tracedFrame.id srcMap.frames
+                    Dict.lookup tracedFrame.sourceId srcMap.frames
 
                 maybeRegionSource =
                     maybeFrame
@@ -295,18 +347,26 @@ viewTrace srcMap hoveredExpr traceFrame =
 
                                 Ok frameTraceHtml ->
                                     frameTraceHtml
+
+                        headerMsg =
+                            p []
+                                [ text "Instrumented frame (sourceId: "
+                                , code [] [ text (SourceMap.frameIdToString tracedFrame.sourceId) ]
+                                , text ", runtimeId: "
+                                , code [] [ text (String.fromInt tracedFrame.runtimeId) ]
+                                , text ")"
+                                ]
                     in
                     frameContainerElem <|
-                        [ text ("Instrumented frame (id: " ++ toString tracedFrame.id ++ ")")
+                        [ headerMsg
                         , content
-                        , viewChildFrames srcMap traceFrame hoveredExpr
                         ]
 
                 Nothing ->
                     let
                         errMsg =
                             "failed to find frame region! id: "
-                                ++ toString tracedFrame.id
+                                ++ toString tracedFrame.sourceId
                                 ++ "\nsrcMap: "
                                 ++ toString srcMap
                     in
@@ -348,7 +408,7 @@ frameContainerElem items =
 
 viewFrameTrace : SourceMap -> Maybe CompleteExprData -> TraceData.InstrumentedFrameData -> Result String (Html Msg)
 viewFrameTrace srcMap hoveredExprId tracedFrame =
-    frameToTokens srcMap tracedFrame.id
+    frameToTokens srcMap tracedFrame.sourceId
         |> Result.andThen (viewFrameTokens tracedFrame hoveredExprId)
         |> Result.map (pre [])
 
@@ -491,7 +551,7 @@ viewExprTokens context tokens =
                         Just expr ->
                             case expr.value of
                                 Just val ->
-                                    ( Just ( context.frameTrace.id, hereExprId, expr )
+                                    ( Just ( context.frameTrace.sourceId, hereExprId, expr )
                                     , Value.toString val
                                     )
 
@@ -516,7 +576,9 @@ viewExprTokens context tokens =
                                         ( _, _ ) ->
                                             False
                             in
-                            frameId == context.frameTrace.id && id == hereExprId && sameValue
+                            (frameId == context.frameTrace.sourceId)
+                                && (id == hereExprId)
+                                && sameValue
 
                         Nothing ->
                             False
@@ -527,7 +589,12 @@ viewExprTokens context tokens =
                         viewExprTokens context tokensAfterHereExpr
                             |> Result.map
                                 (\( htmlItemsAfterHere, tokensAfterContext ) ->
-                                    ( exprElem maybeExprInfo exprTitle isHovered htmlItemsHere
+                                    ( exprElem
+                                        maybeExprInfo
+                                        exprTitle
+                                        isHovered
+                                        context.frameTrace
+                                        htmlItemsHere
                                         :: htmlItemsAfterHere
                                     , tokensAfterContext
                                     )
@@ -550,16 +617,40 @@ exprElem :
     Maybe ( SourceMap.FrameId, SourceMap.ExprId, TraceData.Expr )
     -> String
     -> Bool
+    -> TraceData.InstrumentedFrameData
     -> List (Html Msg)
     -> Html Msg
-exprElem maybeExprData title isHovered children =
+exprElem maybeExprData title isHovered frameTrace children =
     let
-        handleHover =
+        handlers =
             case maybeExprData of
-                Just exprData ->
-                    [ E.stopPropagationOn "mouseover"
-                        (JD.succeed ( HoverExpr exprData, True ))
-                    ]
+                Just (( _, exprId, expr ) as exprData) ->
+                    let
+                        maybeChildFrameInfo =
+                            case expr.childFrame of
+                                Just childFrame ->
+                                    Just { parentFrame = frameTrace.runtimeId, parentExpr = exprId, frame = childFrame }
+
+                                _ ->
+                                    Nothing
+
+                        handleMouseOver =
+                            [ E.stopPropagationOn "mouseover"
+                                (JD.succeed ( HoverExpr exprData, True ))
+                            ]
+
+                        handleClick =
+                            case maybeChildFrameInfo of
+                                Just childFrameInfo ->
+                                    [ E.stopPropagationOn "click"
+                                        (JD.succeed ( OpenChildFrame childFrameInfo, True ))
+                                    , A.style "cursor" "pointer"
+                                    ]
+
+                                Nothing ->
+                                    []
+                    in
+                    handleMouseOver ++ handleClick
 
                 Nothing ->
                     []
@@ -572,7 +663,7 @@ exprElem maybeExprData title isHovered children =
     in
     span
         (coloring
-            ++ handleHover
+            ++ handlers
             ++ [ A.title title
                , A.classList
                     [ ( "expression", True )

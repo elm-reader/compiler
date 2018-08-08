@@ -31,6 +31,8 @@ var _Reader_context = {
   __childFrames: [],
 };
 
+var _Reader_nextFrameId = 0;
+
 var _Reader_recordExpr = F2(function(exprId, val)
 {
   if (_Reader_context.$ !== __1_INSTRUMENTED_FRAME)
@@ -82,6 +84,7 @@ var _Reader_recordCall = F3(function(exprId, func, body)
       __childFrame: {
         $: __2_NON_INSTRUMENTED,
         __childFrames: newContext.__childFrames,
+        __runtimeId: _Reader_nextFrameId++,
       },
     };
 
@@ -125,6 +128,7 @@ var _Reader_recordFrame = F2(function(frameIdRaw, body)
     $: __2_INSTRUMENTED,
     __id: frameId,
     __exprs: newContext.__exprs,
+    __runtimeId: _Reader_nextFrameId++,
   };
 
   if (_Reader_context.$ === __1_CALL)
@@ -176,7 +180,8 @@ function _Reader_toHumanReadable(frame)
     });
     return {
       tag: 'Instrumented',
-      id: frame.__id,
+      source_map_id: frame.__id,
+      runtime_id: frame.__runtimeId,
       exprs: readableExprs
     };
   }
@@ -185,6 +190,7 @@ function _Reader_toHumanReadable(frame)
     return {
       tag: 'NonInstrumented',
       child_frames: frame.__childFrames.map(_Reader_toHumanReadable),
+      runtime_id: frame.__runtimeId,
     };
   }
 }

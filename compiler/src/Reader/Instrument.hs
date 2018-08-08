@@ -780,7 +780,7 @@ collectOuterFrame home frameId frameRegion (Answers frames regions names) =
     frame =
       SrcMap.Frame
         { SrcMap._region = SrcMap.regionIn home frameRegion
-        , SrcMap._exprRegions = Bag.toList regions
+        , SrcMap._exprRegions = (SrcMap.selfExprId, SrcMap.regionIn home frameRegion) : Bag.toList regions
         , SrcMap._exprNames = Map.fromList $ Bag.toList names
         }
   in

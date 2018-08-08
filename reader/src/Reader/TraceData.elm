@@ -2,10 +2,12 @@ module Reader.TraceData
     exposing
         ( Expr
         , Frame(..)
+        , FrameId
         , InstrumentedFrameData
         , TraceData(..)
         , childFrames
         , decode
+        , frameIdOf
         , isFrameInstrumented
         )
 
@@ -35,11 +37,16 @@ decode =
 
 type Frame
     = InstrumentedFrame InstrumentedFrameData
-    | NonInstrumentedFrame (List Frame)
+    | NonInstrumentedFrame FrameId (List Frame)
+
+
+type alias FrameId =
+    Int
 
 
 type alias InstrumentedFrameData =
-    { id : SourceMap.FrameId
+    { sourceId : SourceMap.FrameId
+    , runtimeId : FrameId
     , exprs : Dict SourceMap.ExprId Expr
     }
 
@@ -50,8 +57,18 @@ isFrameInstrumented frame =
         InstrumentedFrame _ ->
             True
 
-        NonInstrumentedFrame _ ->
+        NonInstrumentedFrame _ _ ->
             False
+
+
+frameIdOf : Frame -> FrameId
+frameIdOf frame =
+    case frame of
+        NonInstrumentedFrame id _ ->
+            id
+
+        InstrumentedFrame { runtimeId } ->
+            runtimeId
 
 
 decodeFrameTrace : JD.Decoder Frame
@@ -64,12 +81,14 @@ decodeFrameTrace =
             JD.lazy (\() -> decodeExpr)
 
         decodeInstrumented =
-            JD.map2 (\id exprs -> InstrumentedFrame (InstrumentedFrameData id exprs))
-                (JD.field "id" SourceMap.decodeFrameId)
+            JD.map3 (\sid rid exprs -> InstrumentedFrame (InstrumentedFrameData sid rid exprs))
+                (JD.field "source_map_id" SourceMap.decodeFrameId)
+                (JD.field "runtime_id" JD.int)
                 (JD.field "exprs" <| Dict.decode ( "id", SourceMap.decodeExprId ) ( "expr", decExpr ))
 
         decodeNonInstrumented =
-            JD.map NonInstrumentedFrame
+            JD.map2 NonInstrumentedFrame
+                (JD.field "runtime_id" JD.int)
                 (JD.field "child_frames" <| JD.list decFrame)
     in
     JD.oneOf [ decodeNonInstrumented, decodeInstrumented ]
@@ -83,7 +102,7 @@ childFrames frameTrace =
                 |> List.map .childFrame
                 |> filterListForJust
 
-        NonInstrumentedFrame children ->
+        NonInstrumentedFrame _ children ->
             children
 
 

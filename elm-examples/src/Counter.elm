@@ -38,7 +38,7 @@ euclid a b =
     if b == 0 then
         a
     else
-        euclid b (a |> modBy b)
+        euclid b (modBy b a)
 
 
 

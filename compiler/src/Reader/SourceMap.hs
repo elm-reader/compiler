@@ -12,6 +12,7 @@ module Reader.SourceMap
   , emptyProject
   , addModule
   , regionIn
+  , selfExprId
   )
   where
 
@@ -187,6 +188,10 @@ encodeFrameId (FrameId mod def frameIdx) =
 
 newtype ExprId = ExprId Int
   deriving (Eq, Ord, Show)
+
+-- ExprId for the (return) value of a frame
+selfExprId :: ExprId
+selfExprId = ExprId (-1)
 
 encodeExprId :: ExprId -> Encode.Value
 encodeExprId (ExprId id) =

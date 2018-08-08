@@ -7,7 +7,7 @@ import List
 
 main =
     Browser.sandbox
-        { init = init
+        { init = ( init, initWithoutPipes )
         , update = update
         , view = view
         }
@@ -25,6 +25,11 @@ init =
     List.range 0 10
         |> List.map (\x -> transform x)
         |> List.filter filter
+
+
+initWithoutPipes =
+    List.filter filter
+        (List.map (\x -> transform x) (List.range 0 10))
 
 
 update a b =
