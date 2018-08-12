@@ -150,7 +150,7 @@ var _Reader_recordFrame = F2(function(frameIdRaw, body)
     $: __1_INSTRUMENTED_FRAME,
     __exprs: {},
     __runtimeId:
-      (_Reader_context.$ === '__1_CALL'
+      (_Reader_context.$ === __1_CALL
           ? _Reader_context.__runtimeId
           : _Reader_nextFrameId(_Reader_context.__runtimeId)),
   };

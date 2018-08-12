@@ -1,6 +1,7 @@
 module Reader.TraceData
     exposing
         ( Expr
+        , ExprWithContext
         , Frame(..)
         , FrameId(..)
         , InstrumentedFrameData
@@ -172,3 +173,11 @@ decodeExpr =
     JD.map2 Expr
         (JD.maybe <| JD.field "val" Value.decode)
         (JD.field "child_frame" <| JD.nullable decodeFrameTrace)
+
+
+type alias ExprWithContext =
+    { frameSrcId : SourceMap.FrameId
+    , stackFrameId : FrameId
+    , exprId : SourceMap.ExprId
+    , expr : Expr
+    }
