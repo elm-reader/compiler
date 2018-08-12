@@ -2,12 +2,15 @@ module Reader.TraceData
     exposing
         ( Expr
         , Frame(..)
-        , FrameId
+        , FrameId(..)
         , InstrumentedFrameData
         , TraceData(..)
         , childFrames
         , decode
         , frameIdOf
+        , frameIdToString
+        , frameIdsEqual
+        , isAncestorOf
         , isFrameInstrumented
         )
 
@@ -40,8 +43,26 @@ type Frame
     | NonInstrumentedFrame FrameId (List Frame)
 
 
-type alias FrameId =
-    Int
+type FrameId
+    = -- uid: the unique ID of this runtime frame
+      -- id path: the IDs of this frame's ancestors, from the root to this frame
+      FrameId Int (List Int)
+
+
+decodeFrameId : JD.Decoder FrameId
+decodeFrameId =
+    JD.map2 FrameId
+        (JD.field "uid" JD.int)
+        (JD.field "id_path" (JD.list JD.int))
+
+
+frameIdToString : FrameId -> String
+frameIdToString (FrameId uid ancestors) =
+    "Frame "
+        ++ String.fromInt uid
+        ++ " (ancestors: ["
+        ++ String.join ", " (List.map String.fromInt ancestors)
+        ++ ")]"
 
 
 type alias InstrumentedFrameData =
@@ -71,6 +92,21 @@ frameIdOf frame =
             runtimeId
 
 
+frameIdsEqual : FrameId -> FrameId -> Bool
+frameIdsEqual (FrameId uid1 _) (FrameId uid2 _) =
+    uid1 == uid2
+
+
+{-| `isAncestorOf a b` answers whether b is an ancestor of a.
+
+    List.filter (isAncestorOf child) frames
+
+-}
+isAncestorOf : FrameId -> FrameId -> Bool
+isAncestorOf (FrameId _ ancestors) (FrameId possibleAncestor _) =
+    List.member possibleAncestor ancestors
+
+
 decodeFrameTrace : JD.Decoder Frame
 decodeFrameTrace =
     let
@@ -83,12 +119,12 @@ decodeFrameTrace =
         decodeInstrumented =
             JD.map3 (\sid rid exprs -> InstrumentedFrame (InstrumentedFrameData sid rid exprs))
                 (JD.field "source_map_id" SourceMap.decodeFrameId)
-                (JD.field "runtime_id" JD.int)
+                (JD.field "runtime_id" decodeFrameId)
                 (JD.field "exprs" <| Dict.decode ( "id", SourceMap.decodeExprId ) ( "expr", decExpr ))
 
         decodeNonInstrumented =
             JD.map2 NonInstrumentedFrame
-                (JD.field "runtime_id" JD.int)
+                (JD.field "runtime_id" decodeFrameId)
                 (JD.field "child_frames" <| JD.list decFrame)
     in
     JD.oneOf [ decodeNonInstrumented, decodeInstrumented ]

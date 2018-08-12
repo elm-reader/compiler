@@ -7,7 +7,7 @@ import List
 
 main =
     Browser.sandbox
-        { init = ( init, initWithoutPipes )
+        { init = ( init, initWithoutPipes, fib10 )
         , update = update
         , view = view
         }
@@ -30,6 +30,29 @@ init =
 initWithoutPipes =
     List.filter filter
         (List.map (\x -> transform x) (List.range 0 10))
+
+
+fibonacci n =
+    if n <= 1 then
+        if equalZero n then
+            n
+        else
+            n
+    else
+        fibonacci (n - 1) + fibonacci (n - 2)
+
+
+equalZero n =
+    case n of
+        0 ->
+            True
+
+        _ ->
+            False
+
+
+fib10 =
+    fibonacci 10
 
 
 update a b =

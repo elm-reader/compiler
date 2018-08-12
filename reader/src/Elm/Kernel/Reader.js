@@ -1,7 +1,10 @@
 /*
 
 import Elm.Kernel.Utils exposing (Tuple0)
-import Tuple exposing (pair)
+import Elm.Kernel.List exposing (Cons, Nil)
+import Elm.Kernel.JsArray exposing (initializeFromList)
+import Tuple exposing (pair, first)
+import List exposing (reverse, length)
 import Browser exposing (element)
 import Platform.Sub as Sub exposing (none)
 import Platform.Cmd as Cmd exposing (none)
@@ -26,12 +29,38 @@ var _Reader_main = F2(function (decoder, debugData)
   })(decoder)(debugData);
 });
 
+/*
+Types:
+type context
+  = __1_NON_INSTRUMENTED_FRAME (__childFrames: Array of frames, runtimeId)
+  | __1_INSTRUMENTED_FRAME (__exprs: object representing map from expr IDs to exprs, runtimeId)
+  | __1_CALL (__childFrame: frame resulting from call, runtimeId)
+
+type frame
+  = __2_NON_INSTRUMENTED (__childFrames: Array of frames, __runtimeId: runtime ID of frame)
+  | __2_INSTRUMENTED (__id: ID of source map frame, __exprs, __runtimeId)
+
+type expr = { __val: value of expression, __childFrame: frame that returned it }
+*/
+
+var _Reader_nextFrameId = (function () {
+    var nextUid = 0;
+
+    // Construct a linked list as each stack frame's ID,
+    // with the first element being that frame's unique
+    // integer ID.
+    return function(parent) {
+        var uid = nextUid;
+        nextUid += 1
+        return __List_Cons(uid, parent || __List_Nil);
+    };
+}());
+
 var _Reader_context = {
   $: __1_NON_INSTRUMENTED_FRAME,
   __childFrames: [],
+  __runtimeId: _Reader_nextFrameId(),
 };
-
-var _Reader_nextFrameId = 0;
 
 var _Reader_recordExpr = F2(function(exprId, val)
 {
@@ -72,7 +101,8 @@ var _Reader_recordCall = F3(function(exprId, func, body)
     var newContext = {
       $: __1_NON_INSTRUMENTED_FRAME,
       __childFrames: [],
-    }
+      __runtimeId: _Reader_nextFrameId(_Reader_context.__runtimeId),
+    };
 
     var oldContext = _Reader_context;
     _Reader_context = newContext;
@@ -84,7 +114,7 @@ var _Reader_recordCall = F3(function(exprId, func, body)
       __childFrame: {
         $: __2_NON_INSTRUMENTED,
         __childFrames: newContext.__childFrames,
-        __runtimeId: _Reader_nextFrameId++,
+        __runtimeId: newContext.__runtimeId,
       },
     };
 
@@ -95,6 +125,7 @@ var _Reader_recordCall = F3(function(exprId, func, body)
     var newContext = {
       $: __1_CALL,
       __childFrame: null,
+      __runtimeId: _Reader_nextFrameId(_Reader_context.__runtimeId),
     };
 
     var oldContext = _Reader_context;
@@ -105,6 +136,7 @@ var _Reader_recordCall = F3(function(exprId, func, body)
     _Reader_context.__exprs[exprId] = {
       __val: result,
       __childFrame: newContext.__childFrame,
+      __runtimeId: newContext.__runtimeId,
     };
 
     return result;
@@ -117,6 +149,10 @@ var _Reader_recordFrame = F2(function(frameIdRaw, body)
   var newContext = {
     $: __1_INSTRUMENTED_FRAME,
     __exprs: {},
+    __runtimeId:
+      (_Reader_context.$ === '__1_CALL'
+          ? _Reader_context.__runtimeId
+          : _Reader_nextFrameId(_Reader_context.__runtimeId)),
   };
 
   var oldContext = _Reader_context;
@@ -128,7 +164,7 @@ var _Reader_recordFrame = F2(function(frameIdRaw, body)
     $: __2_INSTRUMENTED,
     __id: frameId,
     __exprs: newContext.__exprs,
-    __runtimeId: _Reader_nextFrameId++,
+    __runtimeId: newContext.__runtimeId,
   };
 
   if (_Reader_context.$ === __1_CALL)
@@ -159,6 +195,20 @@ var _Reader_contextJSON = function ()
   return _Reader_toHumanReadable(_Reader_context).child_frames;
 };
 
+var _Reader_runtimeIdToJson = function (runtimeId) {
+    var uid = runtimeId.a;
+    var idPathList = __List_reverse(runtimeId);
+    var ids = __Tuple_first(
+        A2(__JsArray_initializeFromList, __List_length(idPathList) - 1, idPathList)
+    );
+    console.log("ancetors of " + uid, ":", ids);
+    console.log("idPathList: ", idPathList, "original runtimeId: ", runtimeId)
+    return {
+        uid: uid,
+        id_path: ids,
+    };
+};
+
 function _Reader_toHumanReadable(frame)
 {
   if (frame.$ === __2_INSTRUMENTED)
@@ -181,7 +231,7 @@ function _Reader_toHumanReadable(frame)
     return {
       tag: 'Instrumented',
       source_map_id: frame.__id,
-      runtime_id: frame.__runtimeId,
+      runtime_id: _Reader_runtimeIdToJson(frame.__runtimeId),
       exprs: readableExprs
     };
   }
@@ -190,7 +240,7 @@ function _Reader_toHumanReadable(frame)
     return {
       tag: 'NonInstrumented',
       child_frames: frame.__childFrames.map(_Reader_toHumanReadable),
-      runtime_id: frame.__runtimeId,
+      runtime_id: _Reader_runtimeIdToJson(frame.__runtimeId),
     };
   }
 }

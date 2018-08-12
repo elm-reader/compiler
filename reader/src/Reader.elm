@@ -79,19 +79,28 @@ type alias Model =
     { sources : SourceMap
     , traces : TraceData
     , hoveredExpr : Maybe CompleteExprData
-    , selectedFrames : Maybe SelectedFrames
+    , selectedFrames : Maybe SelectedFrame
     }
 
 
-type alias SelectedFrames =
-    -- child frame list ordered from top to bottom
-    ( TraceData.InstrumentedFrameData
-    , List
-        { frame : TraceData.Frame
-        , parentExpr : SourceMap.ExprId
-        , parentFrame : TraceData.FrameId
-        }
-    )
+type SelectedFrame
+    = SelectedFrame
+        -- the selected frame:
+        TraceData.Frame
+        -- the open child frame, if any
+        (Maybe TraceData.FrameId)
+        -- all the child frames (including the open one):
+        (List SelectedFrame)
+
+
+frameSelectionFrom : TraceData.Frame -> SelectedFrame
+frameSelectionFrom frame =
+    SelectedFrame frame Nothing (List.map frameSelectionFrom (TraceData.childFrames frame))
+
+
+frameSelectionId : SelectedFrame -> TraceData.FrameId
+frameSelectionId (SelectedFrame frame _ _) =
+    TraceData.frameIdOf frame
 
 
 type alias CompleteExprData =
@@ -128,12 +137,8 @@ parseConfig data =
 
 type Msg
     = HoverExpr CompleteExprData
-    | SelectFrame TraceData.InstrumentedFrameData
-    | OpenChildFrame
-        { parentExpr : SourceMap.ExprId
-        , frame : TraceData.Frame
-        , parentFrame : TraceData.FrameId
-        }
+    | SelectTopLevelFrame TraceData.InstrumentedFrameData
+    | OpenChildFrame TraceData.FrameId
 
 
 updateConsideringInit : Msg -> ModelConsideringInit -> ( ModelConsideringInit, Cmd Msg )
@@ -160,34 +165,53 @@ update msg model =
         HoverExpr exprData ->
             { model | hoveredExpr = Just exprData }
 
-        SelectFrame frameTrace ->
-            { model | selectedFrames = Just ( frameTrace, [] ) }
+        SelectTopLevelFrame frameTrace ->
+            let
+                selectedFrame =
+                    frameSelectionFrom (TraceData.InstrumentedFrame frameTrace)
+            in
+            { model | selectedFrames = Just selectedFrame }
 
-        OpenChildFrame childFrameInfo ->
+        OpenChildFrame childFrameId ->
             case model.selectedFrames of
                 Nothing ->
                     Debug.log "Unexpected OpenChildFrame msg!" model
 
-                Just ( topFrame, children ) ->
-                    let
-                        addFrame frames =
-                            case frames of
-                                [] ->
-                                    [ childFrameInfo ]
+                Just topLevelSelectedFrame ->
+                    { model | selectedFrames = Maybe.map (openFrame childFrameId) model.selectedFrames }
 
-                                f :: fs ->
-                                    if TraceData.frameIdOf f.frame == childFrameInfo.parentFrame then
-                                        [ f, childFrameInfo ]
-                                    else
-                                        f :: addFrame fs
 
-                        newSelectedFrames =
-                            if topFrame.runtimeId == childFrameInfo.parentFrame then
-                                Just ( topFrame, [ childFrameInfo ] )
-                            else
-                                Just ( topFrame, addFrame children )
-                    in
-                    { model | selectedFrames = newSelectedFrames }
+openFrame : TraceData.FrameId -> SelectedFrame -> SelectedFrame
+openFrame childFrameId =
+    let
+        isTarget (SelectedFrame otherFrame _ _) =
+            TraceData.frameIdsEqual
+                childFrameId
+                (TraceData.frameIdOf otherFrame)
+
+        isAncestor =
+            frameSelectionId >> TraceData.isAncestorOf childFrameId
+
+        openFrameIn ((SelectedFrame otherFrame maybeOpenChildId children) as selectedFrame) =
+            if isTarget selectedFrame then
+                selectedFrame
+            else
+                let
+                    combine sf ( newChild, restChildren ) =
+                        if isTarget sf || isAncestor sf then
+                            ( Just (frameSelectionId sf)
+                            , openFrameIn sf :: restChildren
+                            )
+                        else
+                            ( newChild, sf :: restChildren )
+
+                    ( maybeNewOpenChild, newChildren ) =
+                        children
+                            |> List.foldr combine ( Nothing, [] )
+                in
+                SelectedFrame otherFrame maybeNewOpenChild newChildren
+    in
+    openFrameIn
 
 
 
@@ -248,7 +272,7 @@ viewOutlineSidebar width (TraceData frames) =
         viewFrameLink frame =
             a
                 [ A.href "#"
-                , E.onClick (SelectFrame frame)
+                , E.onClick (SelectTopLevelFrame frame)
                 ]
                 [ text (SourceMap.frameIdToString frame.sourceId) ]
     in
@@ -285,11 +309,40 @@ viewDetailsSidebar layout maybeExpr =
 -- VIEW: viewing a stack of frames
 
 
+stackOfOpenFrames :
+    SelectedFrame
+    -> List TraceData.Frame -- TODO: include more data than TraceData.Frame
+stackOfOpenFrames (SelectedFrame thisFrame maybeOpenChildId children) =
+    case maybeOpenChildId of
+        Nothing ->
+            [ thisFrame ]
+
+        Just childId ->
+            case List.filter (frameSelectionId >> TraceData.frameIdsEqual childId) children of
+                [ openChild ] ->
+                    thisFrame :: stackOfOpenFrames openChild
+
+                [] ->
+                    Debug.log
+                        "ERROR: did not find open child ID in child frames"
+                        [ thisFrame ]
+
+                (anOpenChild :: _ :: _) as duplicates ->
+                    let
+                        _ =
+                            Debug.log
+                                "ERROR: found duplicate child frames with same ID"
+                                (List.map frameSelectionId duplicates)
+                    in
+                    thisFrame
+                        :: stackOfOpenFrames anOpenChild
+
+
 viewTraceWindow :
     Attribute Msg
     -> SourceMap
     -> Maybe CompleteExprData
-    -> Maybe SelectedFrames
+    -> Maybe SelectedFrame
     -> Html Msg
 viewTraceWindow width sources hoveredExpr maybeTrace =
     let
@@ -300,13 +353,13 @@ viewTraceWindow width sources hoveredExpr maybeTrace =
         Nothing ->
             container [ text "Select a frame to view on the left" ]
 
-        Just ( frameTrace, childFrames ) ->
+        Just selFrame ->
             let
                 childTraces =
-                    childFrames
-                        |> List.map (.frame >> viewTrace sources hoveredExpr)
+                    stackOfOpenFrames selFrame
+                        |> List.map (viewTrace sources hoveredExpr)
             in
-            container (viewTraceInstrumented sources hoveredExpr frameTrace :: childTraces)
+            container childTraces
 
 
 viewTraceInstrumented sources hoveredExpr trace =
@@ -318,7 +371,7 @@ viewTrace srcMap hoveredExpr traceFrame =
     case traceFrame of
         TraceData.NonInstrumentedFrame runtimeId childFrames ->
             frameContainerElem
-                [ text ("Non-instrumented frame (#" ++ String.fromInt runtimeId ++ ").")
+                [ text ("Non-instrumented frame (#" ++ TraceData.frameIdToString runtimeId ++ ").")
                 , viewChildFrames srcMap traceFrame hoveredExpr
                 ]
 
@@ -353,7 +406,7 @@ viewTrace srcMap hoveredExpr traceFrame =
                                 [ text "Instrumented frame (sourceId: "
                                 , code [] [ text (SourceMap.frameIdToString tracedFrame.sourceId) ]
                                 , text ", runtimeId: "
-                                , code [] [ text (String.fromInt tracedFrame.runtimeId) ]
+                                , code [] [ text (TraceData.frameIdToString tracedFrame.runtimeId) ]
                                 , text ")"
                                 ]
                     in
@@ -624,36 +677,27 @@ exprElem maybeExprData title isHovered frameTrace children =
     let
         handlers =
             case maybeExprData of
-                Just (( _, exprId, expr ) as exprData) ->
-                    let
-                        maybeChildFrameInfo =
-                            case expr.childFrame of
-                                Just childFrame ->
-                                    Just { parentFrame = frameTrace.runtimeId, parentExpr = exprId, frame = childFrame }
-
-                                _ ->
-                                    Nothing
-
-                        handleMouseOver =
-                            [ E.stopPropagationOn "mouseover"
-                                (JD.succeed ( HoverExpr exprData, True ))
-                            ]
-
-                        handleClick =
-                            case maybeChildFrameInfo of
-                                Just childFrameInfo ->
-                                    [ E.stopPropagationOn "click"
-                                        (JD.succeed ( OpenChildFrame childFrameInfo, True ))
-                                    , A.style "cursor" "pointer"
-                                    ]
-
-                                Nothing ->
-                                    []
-                    in
-                    handleMouseOver ++ handleClick
-
                 Nothing ->
                     []
+
+                Just (( _, _, expr ) as exprData) ->
+                    let
+                        handleMouseOver =
+                            E.stopPropagationOn "mouseover"
+                                (JD.succeed ( HoverExpr exprData, True ))
+
+                        handleClick =
+                            case expr.childFrame of
+                                Nothing ->
+                                    []
+
+                                Just childFrame ->
+                                    [ E.stopPropagationOn "click"
+                                        (JD.succeed ( OpenChildFrame (TraceData.frameIdOf childFrame), True ))
+                                    , A.style "cursor" "pointer"
+                                    ]
+                    in
+                    handleMouseOver :: handleClick
 
         coloring =
             if isHovered then
