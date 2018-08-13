@@ -10,11 +10,13 @@ module Optimize.Expression
 
 import Prelude hiding (cycle)
 import Control.Monad (foldM)
+import qualified Data.Map as Map
 import qualified Data.Set as Set
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Module.Name as ModuleName
+import qualified AST.Utils.Shader as Shader
 import qualified Data.Index as Index
 import qualified Elm.Name as N
 import qualified Optimize.Case as Case
@@ -168,8 +170,8 @@ optimize cycle (A.At region expression) =
         <*> optimize cycle b
         <*> traverse (optimize cycle) maybeC
 
-    Can.Shader _ src _ ->
-      pure (Opt.Shader src)
+    Can.Shader _ src (Shader.Shader attributes uniforms _varyings) ->
+      pure (Opt.Shader src (Map.keysSet attributes) (Map.keysSet uniforms))
 
 
 
@@ -364,13 +366,20 @@ optimizePotentialTailCall cycle name args expr =
 optimizeTail :: Cycle -> N.Name -> [N.Name] -> Can.Expr -> Names.Tracker Opt.Expr
 optimizeTail cycle rootName argNames locExpr@(A.At _ expression) =
   case expression of
-    Can.Call func@(A.At _ (Can.VarTopLevel _ name)) args ->
+    Can.Call func args ->
       do  oargs <- traverse (optimize cycle) args
-          if name == rootName
+
+          let isMatchingName =
+                case A.toValue func of
+                  Can.VarLocal      name -> rootName == name
+                  Can.VarTopLevel _ name -> rootName == name
+                  _                      -> False
+
+          if isMatchingName
             then
               case Index.indexedZipWith (\_ a b -> (a,b)) argNames oargs of
                 Index.LengthMatch pairs ->
-                  pure $ Opt.TailCall name pairs
+                  pure $ Opt.TailCall rootName pairs
 
                 Index.LengthMismatch _ _ ->
                   do  ofunc <- optimize cycle func

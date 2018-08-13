@@ -65,9 +65,8 @@ data Expr
   | Record (Map.Map N.Name Expr)
   | Unit
   | Tuple Expr Expr (Maybe Expr)
-  | Shader Text
+  | Shader Text (Set.Set N.Name) (Set.Set N.Name)
   deriving (Show)
-
 
 
 data Global = Global ModuleName.Canonical N.Name
@@ -228,7 +227,7 @@ instance Binary Expr where
       Record a         -> putWord8 23 >> put a
       Unit             -> putWord8 24
       Tuple a b c      -> putWord8 25 >> put a >> put b >> put c
-      Shader a         -> putWord8 26 >> put a
+      Shader a b c     -> putWord8 26 >> put a >> put b >> put c
 
   get =
     do  word <- getWord8
@@ -259,7 +258,7 @@ instance Binary Expr where
           23 -> liftM  Record get
           24 -> pure   Unit
           25 -> liftM3 Tuple get get get
-          26 -> liftM  Shader get
+          26 -> liftM3 Shader get get get
           _  -> error "problem getting Opt.Expr binary"
 
 

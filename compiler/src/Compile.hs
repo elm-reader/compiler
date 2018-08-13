@@ -55,7 +55,7 @@ data Artifacts =
     }
 
 instance Show Artifacts where
-  show (Artifacts i o _ _) =
+  show (Artifacts _ o _ _) =
     "Artifacts (interface) (" ++ show o ++ ") (maybe docs) (maybe srcmap)"
 
 

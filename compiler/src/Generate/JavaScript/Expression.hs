@@ -16,6 +16,7 @@ import qualified Data.IntMap as IntMap
 import qualified Data.List as List
 import Data.Map ((!))
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import qualified Data.Text.Encoding as TextEncode
 import qualified Data.Text as Text
 
@@ -181,9 +182,21 @@ generate mode expression =
               , generateJsExpr mode c
               ]
 
-    Opt.Shader src ->
-      let string = JS.String (TextEncode.encodeUtf8Builder src) in
-      JsExpr $ JS.Object [ ( Name.fromLocal "src", string ) ]
+    Opt.Shader src attributes uniforms ->
+      let
+        toTranlation field =
+          ( Name.fromLocal field
+          , JS.String (Name.toBuilder (generateField mode field))
+          )
+
+        toTranslationObject fields =
+          JS.Object (map toTranlation (Set.toList fields))
+      in
+      JsExpr $ JS.Object $
+        [ ( Name.fromLocal "src", JS.String (TextEncode.encodeUtf8Builder src) )
+        , ( Name.fromLocal "attributes", toTranslationObject attributes )
+        , ( Name.fromLocal "uniforms", toTranslationObject uniforms )
+        ]
 
 
 
