@@ -201,8 +201,6 @@ var _Reader_runtimeIdToJson = function (runtimeId) {
     var ids = __Tuple_first(
         A2(__JsArray_initializeFromList, __List_length(idPathList) - 1, idPathList)
     );
-    console.log("ancetors of " + uid, ":", ids);
-    console.log("idPathList: ", idPathList, "original runtimeId: ", runtimeId)
     return {
         uid: uid,
         id_path: ids,
