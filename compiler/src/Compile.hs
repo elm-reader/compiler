@@ -69,16 +69,22 @@ compile flag pkg importDict interfaces source instrumentation =
       basicCanonical <- Result.mapError Error.Canonicalize $
         Canonicalize.canonicalize pkg importDict interfaces valid
 
-      let (canonical, maybeSrcMap) =
-            case instrumentation of
-              Instrument ->
-                let (annotated, srcMap) = Instrument.instrument source basicCanonical
-                in (annotated, Just srcMap)
-
-              NoInstrumentation ->
-                (basicCanonical, Nothing)
-
       let localizer = L.fromModule valid -- TODO should this be strict for GC?
+
+      (canonical, maybeSrcMap) <-
+        case instrumentation of
+          Instrument ->
+            do
+              let (annotated, srcMap) = Instrument.instrument source basicCanonical
+
+              -- Run type inference on the uninstrumented source for better error
+              -- messages
+              runTypeInference localizer basicCanonical
+
+              return (annotated, Just srcMap)
+
+          NoInstrumentation ->
+            return (basicCanonical, Nothing)
 
       annotations <-
         runTypeInference localizer canonical
