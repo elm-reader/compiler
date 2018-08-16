@@ -194,7 +194,7 @@ matrix4 = Canonical Pkg.linearAlgebra "Math.Matrix4"
 
 {-# NOINLINE reader #-}
 reader :: Canonical
-reader = Canonical Pkg.reader "Reader"
+reader = Canonical Pkg.browser "Reader"
 
 
 

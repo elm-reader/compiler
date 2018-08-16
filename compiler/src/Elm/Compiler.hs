@@ -3,6 +3,7 @@ module Elm.Compiler
   ( version
   , Compile.DocsFlag(..)
   , Compile.ReaderFlag(..)
+  , Compile.Instrumentation(..)
   , Compile.Artifacts(..)
   , compile
   , Error.Error
@@ -50,10 +51,10 @@ compile
   -> Map.Map M.Raw M.Canonical
   -> M.Interfaces
   -> BS.ByteString
-  -> Compile.ReaderFlag
+  -> Compile.Instrumentation
   -> ( [Warning.Warning], Either [Error.Error] Compile.Artifacts )
-compile docsFlag pkg importDict interfaces source reader =
-  Result.run $ Compile.compile docsFlag pkg importDict interfaces source reader
+compile docsFlag pkg importDict interfaces source instrumentation =
+  Result.run $ Compile.compile docsFlag pkg importDict interfaces source instrumentation
 
 
 

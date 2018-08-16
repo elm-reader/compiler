@@ -22,6 +22,7 @@ import qualified Data.Text.Encoding as Text
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Module.Name as ModuleName
+import qualified Compile
 import qualified Data.Index as Index
 import qualified Elm.Interface as I
 import qualified Elm.Name as N
@@ -49,7 +50,7 @@ generate mode (Opt.Graph mains graph _fields) roots =
   let
     permittedSet =
       if Mode.isReader mode then
-        Set.fromList $ (ModuleName.Canonical Pkg.reader N.reader) : roots
+        Set.fromList $ ModuleName.reader : roots
       else
         Set.fromList roots
     okMains = Map.restrictKeys mains permittedSet
@@ -69,7 +70,7 @@ setMain :: Mode.Mode -> [ModuleName.Canonical] -> [ModuleName.Canonical]
 setMain mode mains =
   if Mode.isReader mode then
     let
-      (reader, notReader) = List.partition (\(ModuleName.Canonical pkg _) -> pkg == Pkg.reader) mains
+      (reader, notReader) = List.partition (== ModuleName.reader) mains
     in
     reader ++ notReader
   else
@@ -86,7 +87,7 @@ perfNote mode =
     Mode.Prod _ _ ->
       ""
 
-    Mode.Dev _ _ (Just _) ->
+    Mode.Dev _ _ Compile.YesReader ->
       "console.info('Welcome to the Elm reader, examples view! To run your program normally, remove the --reader flag when compiling.');"
 
     Mode.Dev _ Nothing _ ->
@@ -94,7 +95,7 @@ perfNote mode =
       <> B.stringUtf8 (D.makeNakedLink "optimize")
       <> " for better performance and smaller assets.');"
 
-    Mode.Dev _ (Just _) Nothing ->
+    Mode.Dev _ (Just _) Compile.NoReader ->
       "console.warn('Compiled in DEBUG mode. Follow the advice at "
       <> B.stringUtf8 (D.makeNakedLink "optimize")
       <> " for better performance and smaller assets.');"

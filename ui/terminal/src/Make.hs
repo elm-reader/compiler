@@ -43,7 +43,7 @@ run paths (Flags debug optimize output report reader docs) =
       Task.run reporter $
         do  mode <- toMode debug reader optimize
             summary <- Project.getRoot
-            Project.compile mode (toReaderFlag reader) Output.Client output docs summary paths
+            Project.compile mode Output.Client output docs summary paths
 
 
 toMode :: Bool -> Bool -> Bool -> Task.Task Output.Mode

@@ -26,8 +26,8 @@ import qualified Reporting.Task as Task
 -- COMPILE
 
 
-compile :: Project -> Maybe FilePath -> Module.Interfaces -> Dict Plan.Info -> Compiler.ReaderFlag -> Task.Task (Dict Answer)
-compile project maybeDocsPath ifaces modules reader =
+compile :: Project -> Maybe FilePath -> Module.Interfaces -> Dict Plan.Info -> Compiler.Instrumentation -> Task.Task (Dict Answer)
+compile project maybeDocsPath ifaces modules instrumentation =
   do  Task.report (Progress.CompileStart (Map.size modules))
 
       tell <- Task.getReporter
@@ -35,7 +35,7 @@ compile project maybeDocsPath ifaces modules reader =
       answers <- liftIO $
         do  mvar <- newEmptyMVar
             iMVar <- newMVar ifaces
-            answerMVars <- Map.traverseWithKey (compileModule tell project maybeDocsPath mvar iMVar reader) modules
+            answerMVars <- Map.traverseWithKey (compileModule tell project maybeDocsPath mvar iMVar instrumentation) modules
             putMVar mvar answerMVars
             traverse readMVar answerMVars
 
@@ -67,7 +67,7 @@ compileModule
   -> Maybe FilePath
   -> MVar (Dict (MVar Answer))
   -> MVar Module.Interfaces
-  -> Compiler.ReaderFlag
+  -> Compiler.Instrumentation
   -> Module.Raw
   -> Plan.Info
   -> IO (MVar Answer)

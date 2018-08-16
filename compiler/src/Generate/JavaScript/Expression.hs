@@ -1065,15 +1065,11 @@ toDebugMetadata mode msgType =
     Mode.Dev _ Nothing _ ->
       JS.Int 0
 
-    Mode.Dev _ (Just interfaces) Nothing ->
+    Mode.Dev _ (Just (interfaces, srcMap)) _ ->
       JS.Json $ Encode.object $
         [ ("versions", Encode.object [ ("elm", Pkg.encodeVersion Version.version) ])
         , ("types", Type.encodeMetadata (Extract.fromMsg interfaces msgType))
-        ]
-
-    Mode.Dev _ (Just interfaces) (Just srcMap) ->
-      JS.Json $ Encode.object $
-        [ ("source_map", SrcMap.encodeProject srcMap)
+        , ("source_map", SrcMap.encodeProject srcMap)
+        -- TODO: implement an Interface.encode function to get more type data
         , ("interfaces", Encode.text $ Text.pack $ show interfaces)
-        -- TODO: implement an Interface.encode function
         ]

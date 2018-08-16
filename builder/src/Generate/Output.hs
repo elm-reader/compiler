@@ -75,7 +75,7 @@ generate mode target maybeOutput summary graph@(Crawl.Graph args locals _ _ _) a
             case mode of
               Debug ->
                 do  interfaces <- getInterfaces summary locals artifacts
-                    return $ Mode.debug target interfaces
+                    return $ Mode.debug target interfaces (consolidateSourceMaps summary artifacts)
 
               Reader ->
                 do  interfaces <- getInterfaces summary locals artifacts

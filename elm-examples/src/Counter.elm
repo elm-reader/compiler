@@ -41,12 +41,32 @@ euclid a b =
         euclid b (modBy b a)
 
 
+fibonacci n =
+    if n <= 1 then
+        if equalZero n then
+            n
+        else
+            n
+    else
+        fibonacci (n - 1) + fibonacci (n - 2)
+
+
+equalZero n =
+    case n of
+        0 ->
+            True
+
+        _ ->
+            False
+
+
 
 -- MODEL
 
 
 type alias Model =
     { count : Whomstery
+    , fib : Int
     }
 
 
@@ -67,6 +87,7 @@ toNum whomstery =
 init : Model
 init =
     { count = Whomsted
+    , fib = 0
     }
 
 
@@ -83,10 +104,16 @@ update : Msg -> Model -> Model
 update msg model =
     case msg of
         Increment ->
-            { model | count = increment model.count }
+            { model
+                | count = increment model.count
+                , fib = fibonacci (toNum (increment model.count))
+            }
 
         Decrement ->
-            { model | count = decrement model.count }
+            { model
+                | count = decrement model.count
+                , fib = fibonacci (toNum (decrement model.count))
+            }
 
 
 decrement : Whomstery -> Whomstery
@@ -113,4 +140,7 @@ view model =
         [ button [ onClick Decrement ] [ text "-" ]
         , div [] [ text (String.fromInt <| toNum model.count) ]
         , button [ onClick Increment ] [ text "+" ]
+        , p []
+            [ text ("Fibonnaci: " ++ String.fromInt model.fib)
+            ]
         ]

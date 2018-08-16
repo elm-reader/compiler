@@ -10,7 +10,6 @@ module Elm.Package
   , browser, virtualDom, html
   , json, http, url
   , webgl, linearAlgebra
-  , reader
   , suggestions
   , Version(..)
   , initialVersion, dummyVersion
@@ -235,12 +234,6 @@ webgl =
 linearAlgebra :: Name
 linearAlgebra =
   Name "elm-explorations" "linear-algebra"
-
-
-{-# NOINLINE reader #-}
-reader :: Name
-reader =
-  Name "elm-explorations" "reader"
 
 
 

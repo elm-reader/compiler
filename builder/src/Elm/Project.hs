@@ -27,6 +27,7 @@ import qualified File.Compile as Compile
 import qualified File.Crawl as Crawl
 import qualified File.Plan as Plan
 import qualified Generate.Output as Output
+import qualified Generate.JavaScript.Mode as Mode
 import qualified Reporting.Render.Type.Localizer as L
 import qualified Reporting.Task as Task
 import qualified Stuff.Paths as Path
@@ -52,19 +53,28 @@ getRootWithReplFallback =
 
 compile
   :: Output.Mode
-  -> Compiler.ReaderFlag
   -> Output.Target
   -> Maybe Output.Output
   -> Maybe FilePath
   -> Summary
   -> [FilePath]
   -> Task.Task ()
-compile mode reader target maybeOutput docs summary@(Summary.Summary root project _ _ _) paths =
+compile mode target maybeOutput docs summary@(Summary.Summary root project _ _ _) paths =
   do  Project.check project
       args <- Args.fromPaths summary paths
       graph <- Crawl.crawl summary args
       (dirty, ifaces) <- Plan.plan docs summary graph
-      answers <- Compile.compile project docs ifaces dirty reader
+      let instrumentation =
+            case mode of
+                Output.Debug ->
+                  Compiler.Instrument
+
+                Output.Reader ->
+                  Compiler.Instrument
+
+                _ ->
+                  Compiler.NoInstrumentation
+      answers <- Compile.compile project docs ifaces dirty instrumentation
       results <- Artifacts.write root answers
       _ <- traverse (Artifacts.writeDocs results) docs
       Output.generate mode target maybeOutput summary graph results
@@ -80,7 +90,7 @@ compileForRepl noColors localizer source maybeName =
       Project.check project
       graph <- Crawl.crawlFromSource summary source
       (dirty, ifaces) <- Plan.plan Nothing summary graph
-      answers <- Compile.compile project Nothing ifaces dirty Compiler.NoReader
+      answers <- Compile.compile project Nothing ifaces dirty Compiler.NoInstrumentation
       results <- Artifacts.write root answers
       let (Compiler.Artifacts elmi _ _ _) = results ! N.replModule
       traverse (Output.generateReplFile noColors localizer summary graph elmi) maybeName
@@ -96,7 +106,7 @@ generateDocs summary@(Summary.Summary root project _ _ _) =
       args <- Args.fromSummary summary
       graph <- Crawl.crawl summary args
       (dirty, ifaces) <- Plan.plan (Just docsPath) summary graph
-      answers <- Compile.compile project (Just docsPath) ifaces dirty Compiler.NoReader
+      answers <- Compile.compile project (Just docsPath) ifaces dirty Compiler.NoInstrumentation
       results <- Artifacts.write root answers
       Output.noDebugUsesInPackage summary graph
       Artifacts.writeDocs results docsPath

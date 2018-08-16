@@ -2,6 +2,7 @@
 module Compile
   ( DocsFlag(..)
   , ReaderFlag(..)
+  , Instrumentation(..)
   , compile
   , Artifacts(..)
   )
@@ -59,8 +60,8 @@ instance Show Artifacts where
     "Artifacts (interface) (" ++ show o ++ ") (maybe docs) (maybe srcmap)"
 
 
-compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> ReaderFlag -> Result i Artifacts
-compile flag pkg importDict interfaces source reader =
+compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> Instrumentation -> Result i Artifacts
+compile flag pkg importDict interfaces source instrumentation =
   do
       valid <- Result.mapError Error.Syntax $
         Parse.program pkg source
@@ -69,12 +70,12 @@ compile flag pkg importDict interfaces source reader =
         Canonicalize.canonicalize pkg importDict interfaces valid
 
       let (canonical, maybeSrcMap) =
-            case reader of
-              Compile.YesReader ->
+            case instrumentation of
+              Instrument ->
                 let (annotated, srcMap) = Instrument.instrument source basicCanonical
                 in (annotated, Just srcMap)
 
-              Compile.NoReader ->
+              NoInstrumentation ->
                 (basicCanonical, Nothing)
 
       let localizer = L.fromModule valid -- TODO should this be strict for GC?
@@ -150,3 +151,6 @@ genarateDocs flag modul =
 
 
 data ReaderFlag = YesReader | NoReader
+
+-- Instrumentation is on when either for either --debug or --reader.
+data Instrumentation = Instrument | NoInstrumentation

@@ -18,6 +18,7 @@ import qualified Data.Maybe as Maybe
 
 import qualified AST.Optimized as Opt
 import qualified AST.Module.Name as ModuleName
+import qualified Compile
 import qualified Elm.Interface as I
 import qualified Elm.Name as N
 import qualified Generate.JavaScript.Name as Name
@@ -29,26 +30,26 @@ import qualified Reader.SourceMap as SrcMap
 
 
 data Mode
-  = Dev Target (Maybe I.Interfaces) (Maybe SrcMap.Project)
+  = Dev Target (Maybe (I.Interfaces, SrcMap.Project)) Compile.ReaderFlag
   | Prod Target ShortFieldNames
 
 
 data Target = Client | Server
 
 
-debug :: Target -> I.Interfaces -> Mode
-debug target interfaces =
-  Dev target (Just interfaces) Nothing
+debug :: Target -> I.Interfaces -> SrcMap.Project -> Mode
+debug target interfaces srcMap =
+  Dev target (Just (interfaces, srcMap)) Compile.NoReader
 
 
 dev :: Target -> Mode
 dev target =
-  Dev target Nothing Nothing
+  Dev target Nothing Compile.NoReader
 
 
 reader :: Target -> I.Interfaces -> SrcMap.Project -> Mode
 reader target ifaces srcMap =
-  Dev target (Just ifaces) (Just srcMap)
+  Dev target (Just (ifaces, srcMap)) Compile.YesReader
 
 
 prod :: Target -> Opt.Graph -> Mode
@@ -63,8 +64,8 @@ prod target (Opt.Graph _ _ fieldCounts) =
 isReader :: Mode -> Bool
 isReader mode =
   case mode of
-    Dev _ _ maybeSrcMaps -> Maybe.isJust maybeSrcMaps
-    Prod _ _ -> False
+    Dev _ _ Compile.YesReader -> True
+    _ -> False
 
 
 
