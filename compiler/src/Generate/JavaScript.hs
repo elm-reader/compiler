@@ -48,33 +48,19 @@ data Output
 generate :: Mode.Mode -> Opt.Graph -> [ModuleName.Canonical] -> Output
 generate mode (Opt.Graph mains graph _fields) roots =
   let
-    permittedSet =
-      if Mode.isReader mode then
-        Set.fromList $ ModuleName.reader : roots
-      else
-        Set.fromList roots
-    okMains = Map.restrictKeys mains permittedSet
+    rootSet = Set.fromList roots
+    rootMap = Map.restrictKeys mains rootSet
   in
-  case map ModuleName._module (setMain mode (Map.keys okMains)) of
+  case map ModuleName._module (Map.keys rootMap) of
     [] ->
       None
 
     name:names ->
       let
-        state = Map.foldrWithKey (addMain mode graph) emptyState okMains
-        builder = perfNote mode <> stateToBuilder state <> toMainExports mode okMains
+        state = Map.foldrWithKey (addMain mode graph) emptyState rootMap
+        builder = perfNote mode <> stateToBuilder state <> toMainExports mode rootMap
       in
       Some name names builder
-
-setMain :: Mode.Mode -> [ModuleName.Canonical] -> [ModuleName.Canonical]
-setMain mode mains =
-  if Mode.isReader mode then
-    let
-      (reader, notReader) = List.partition (== ModuleName.reader) mains
-    in
-    reader ++ notReader
-  else
-    mains
 
 addMain :: Mode.Mode -> Graph -> ModuleName.Canonical -> main -> State -> State
 addMain mode graph home _ state =

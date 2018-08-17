@@ -24,6 +24,7 @@ import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt
 import qualified AST.Module.Name as ModuleName
 import qualified Data.Index as Index
+import qualified Elm.Compiler as Compiler
 import qualified Elm.Compiler.Type as Type
 import qualified Elm.Compiler.Type.Extract as Extract
 import qualified Elm.Name as N
@@ -1065,11 +1066,12 @@ toDebugMetadata mode msgType =
     Mode.Dev _ Nothing _ ->
       JS.Int 0
 
-    Mode.Dev _ (Just (interfaces, srcMap)) _ ->
+    Mode.Dev _ (Just (interfaces, srcMap)) readerFlag ->
       JS.Json $ Encode.object $
         [ ("versions", Encode.object [ ("elm", Pkg.encodeVersion Version.version) ])
         , ("types", Type.encodeMetadata (Extract.fromMsg interfaces msgType))
         , ("source_map", SrcMap.encodeProject srcMap)
+        , ("reader", Encode.bool $ readerFlag == Compiler.YesReader)
         -- TODO: implement an Interface.encode function to get more type data
         , ("interfaces", Encode.text $ Text.pack $ show interfaces)
         ]

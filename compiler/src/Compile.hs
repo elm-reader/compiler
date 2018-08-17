@@ -157,6 +157,7 @@ genarateDocs flag modul =
 
 
 data ReaderFlag = YesReader | NoReader
+  deriving (Eq)
 
 -- Instrumentation is on when either for either --debug or --reader.
 data Instrumentation = Instrument | NoInstrumentation
