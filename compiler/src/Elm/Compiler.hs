@@ -10,6 +10,7 @@ module Elm.Compiler
   , errorsToDoc
   , errorsToJson
   , Warning.Warning
+  , consolidateSourceMaps
   )
   where
 
@@ -18,11 +19,13 @@ import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Text as Text
 
+import qualified AST.Module.Name as ModuleName
 import qualified Compile
 import qualified Elm.Compiler.Module as M
 import qualified Elm.Compiler.Version
 import qualified Elm.Package as Pkg
 import qualified Json.Encode as Encode
+import qualified Reader.SourceMap as SrcMap
 import qualified Reporting.Doc as D
 import qualified Reporting.Error as Error
 import qualified Reporting.Render.Code as Code
@@ -51,11 +54,26 @@ compile
   -> Map.Map M.Raw M.Canonical
   -> M.Interfaces
   -> BS.ByteString
-  -> Compile.Instrumentation
+  -> (Compile.ReaderFlag, Compile.Instrumentation)
   -> ( [Warning.Warning], Either [Error.Error] Compile.Artifacts )
-compile docsFlag pkg importDict interfaces source instrumentation =
-  Result.run $ Compile.compile docsFlag pkg importDict interfaces source instrumentation
+compile docsFlag pkg importDict interfaces source reader =
+  Result.run $ Compile.compile docsFlag pkg importDict interfaces source reader
 
+
+consolidateSourceMaps
+  :: Pkg.Name
+  -> Map.Map M.Raw Compile.Artifacts
+  -> SrcMap.Project
+consolidateSourceMaps pkg artifacts =
+  let
+    addSourceMap home (Compile.Artifacts _ _ _ maybeSrcMap) projectSrcMap =
+      case maybeSrcMap of
+        Nothing ->
+          projectSrcMap
+        Just moduleSrcMap ->
+          SrcMap.addModule (ModuleName.Canonical pkg home) moduleSrcMap projectSrcMap
+  in
+  Map.foldrWithKey addSourceMap SrcMap.emptyProject artifacts
 
 
 -- ERRORS TO DOC

@@ -9,7 +9,7 @@ module AST.Module.Name
   , virtualDom, debug, bitwise
   , jsonDecode, jsonEncode
   , webgl, texture, vector2, vector3, vector4, matrix4
-  , reader
+  , reader, readerHooks, isReader
   , isKernel, getKernel, canonicalIsKernel
   )
   where
@@ -196,6 +196,16 @@ matrix4 = Canonical Pkg.linearAlgebra "Math.Matrix4"
 reader :: Canonical
 reader = Canonical Pkg.browser "Reader"
 
+
+{-# NOINLINE readerHooks #-}
+readerHooks :: Canonical
+readerHooks = Canonical Pkg.browser "Reader.Hooks"
+
+
+isReader :: Canonical -> Bool
+isReader (Canonical pkg name) =
+  pkg == Pkg.browser
+    && (N.toText name == "Reader" || N.startsWith "Reader." name)
 
 
 -- IS KERNEL

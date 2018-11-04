@@ -7,7 +7,6 @@ module Generate.JavaScript
   where
 
 import Text.Show.Pretty (ppShow)
-import Debug.Trace (trace)
 
 import Prelude hiding (cycle, print)
 import qualified Data.ByteString.Builder as B

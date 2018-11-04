@@ -9,9 +9,9 @@ module Elm.Project
   )
   where
 
-
 import qualified Data.ByteString as BS
 import Data.Map ((!))
+import qualified Data.Map as Map
 import System.FilePath ((</>))
 
 import qualified Elm.Compiler as Compiler
@@ -64,17 +64,17 @@ compile mode target maybeOutput docs summary@(Summary.Summary root project _ _ _
       args <- Args.fromPaths summary paths
       graph <- Crawl.crawl summary args
       (dirty, ifaces) <- Plan.plan docs summary graph
-      let instrumentation =
+      let reader =
             case mode of
                 Output.Debug ->
-                  Compiler.Instrument
+                  (Compiler.NoReader, Compiler.Instrument)
 
                 Output.Reader ->
-                  Compiler.Instrument
+                  (Compiler.YesReader, Compiler.Instrument)
 
                 _ ->
-                  Compiler.NoInstrumentation
-      answers <- Compile.compile project docs ifaces dirty instrumentation
+                  (Compiler.NoReader, Compiler.NoInstrumentation)
+      answers <- Compile.compile project docs ifaces dirty reader
       results <- Artifacts.write root answers
       _ <- traverse (Artifacts.writeDocs results) docs
       Output.generate mode target maybeOutput summary graph results
@@ -90,7 +90,7 @@ compileForRepl noColors localizer source maybeName =
       Project.check project
       graph <- Crawl.crawlFromSource summary source
       (dirty, ifaces) <- Plan.plan Nothing summary graph
-      answers <- Compile.compile project Nothing ifaces dirty Compiler.NoInstrumentation
+      answers <- Compile.compile project Nothing ifaces dirty (Compiler.NoReader, Compiler.NoInstrumentation)
       results <- Artifacts.write root answers
       let (Compiler.Artifacts elmi _ _ _) = results ! N.replModule
       traverse (Output.generateReplFile noColors localizer summary graph elmi) maybeName
@@ -106,7 +106,7 @@ generateDocs summary@(Summary.Summary root project _ _ _) =
       args <- Args.fromSummary summary
       graph <- Crawl.crawl summary args
       (dirty, ifaces) <- Plan.plan (Just docsPath) summary graph
-      answers <- Compile.compile project (Just docsPath) ifaces dirty Compiler.NoInstrumentation
+      answers <- Compile.compile project (Just docsPath) ifaces dirty (Compiler.NoReader, Compiler.NoInstrumentation)
       results <- Artifacts.write root answers
       Output.noDebugUsesInPackage summary graph
       Artifacts.writeDocs results docsPath

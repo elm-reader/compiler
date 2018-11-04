@@ -8,6 +8,7 @@ module Compile
   )
   where
 
+import Debug.Trace (trace)
 
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
@@ -60,14 +61,26 @@ instance Show Artifacts where
     "Artifacts (interface) (" ++ show o ++ ") (maybe docs) (maybe srcmap)"
 
 
-compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> Instrumentation -> Result i Artifacts
-compile flag pkg importDict interfaces source instrumentation =
+compile :: DocsFlag -> Pkg.Name -> ImportDict -> I.Interfaces -> BS.ByteString -> (ReaderFlag, Instrumentation) -> Result i Artifacts
+compile docsFlag pkg importDict interfaces source (readerFlag, instrumentation') =
   do
       valid <- Result.mapError Error.Syntax $
         Parse.program pkg source
 
       basicCanonical <- Result.mapError Error.Canonicalize $
         Canonicalize.canonicalize pkg importDict interfaces valid
+
+      let
+        module_ =
+          Can._name basicCanonical
+
+        instrumentation =
+          if readerFlag == YesReader
+              && ModuleName.isReader module_
+              && module_ /= ModuleName.readerHooks then
+            Instrument
+          else
+            instrumentation'
 
       let localizer = L.fromModule valid -- TODO should this be strict for GC?
 
@@ -96,7 +109,7 @@ compile flag pkg importDict interfaces source instrumentation =
         Optimize.optimize annotations canonical
 
       documentation <-
-        genarateDocs flag canonical
+        genarateDocs docsFlag canonical
 
       Result.ok $
         Artifacts
@@ -161,3 +174,4 @@ data ReaderFlag = YesReader | NoReader
 
 -- Instrumentation is on when either for either --debug or --reader.
 data Instrumentation = Instrument | NoInstrumentation
+  deriving (Show)

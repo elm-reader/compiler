@@ -10,6 +10,7 @@ module Reader.SourceMap
   , frameIdToText
   , encodeProject
   , emptyProject
+  , combineProjects
   , addModule
   , regionIn
   , selfExprId
@@ -17,6 +18,9 @@ module Reader.SourceMap
   where
 
 
+import Control.Monad (liftM, liftM2, liftM3)
+import Data.Binary (Binary)
+import Data.Binary as Binary
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BSL
 import qualified Data.ByteString.Builder as B
@@ -43,8 +47,18 @@ data Project =
     , _sources :: Map.Map ModuleName.Canonical BS.ByteString
     }
 
+
+instance Binary Project where
+  get =
+    liftM2 Project Binary.get Binary.get
+
+  put (Project a b) =
+    Binary.put a >> Binary.put b
+
+
 emptyProject :: Project
 emptyProject = Project Map.empty Map.empty
+
 
 addModule :: ModuleName.Canonical -> Module -> Project -> Project
 addModule modName (Module modFrames modSource) (Project frames sources) =
@@ -52,6 +66,12 @@ addModule modName (Module modFrames modSource) (Project frames sources) =
     { _allFrames = Map.union modFrames frames
     , _sources = Map.insert modName modSource sources
     }
+
+
+combineProjects :: Project -> Project -> Project
+combineProjects (Project framesA sourcesA) (Project framesB sourcesB) =
+  Project (Map.union framesA framesB) (Map.union sourcesA sourcesB)
+
 
 encodeProject :: Project -> Encode.Value
 encodeProject (Project frames sources) =
@@ -79,6 +99,14 @@ data Module =
     }
     deriving (Show)
 
+
+instance Binary Module where
+  get =
+    liftM2 Module Binary.get Binary.get
+
+  put (Module a b) =
+    Binary.put a >> Binary.put b
+
 textShow :: (Show a) => a -> Text.Text
 textShow = Text.pack . show
 
@@ -102,6 +130,15 @@ data Frame =
     , _exprNames :: Map.Map ExprId (ModuleName.Canonical, N.Name) -- Some ids may not have entries
     }
     deriving (Show)
+
+
+instance Binary Frame where
+  get =
+    liftM3 Frame Binary.get Binary.get Binary.get
+
+  put (Frame a b c) =
+    Binary.put a >> Binary.put b >> Binary.put c
+
 
 encodeFrame :: Frame -> Encode.Value
 encodeFrame (Frame region exprRegions exprNames) =
@@ -154,6 +191,15 @@ data QualifiedRegion =
     }
     deriving (Eq, Ord, Show)
 
+
+instance Binary QualifiedRegion where
+  get =
+    liftM3 QualifiedRegion Binary.get Binary.get Binary.get
+
+  put (QualifiedRegion a b c) =
+    Binary.put a >> Binary.put b >> Binary.put c
+
+
 regionIn :: ModuleName.Canonical -> R.Region -> QualifiedRegion
 regionIn mod region =
   QualifiedRegion mod (R._start region) (R._end region)
@@ -177,6 +223,14 @@ data FrameId =
     }
     deriving (Eq, Ord, Show)
 
+
+instance Binary FrameId where
+  get =
+    liftM3 FrameId Binary.get Binary.get Binary.get
+
+  put (FrameId a b c) =
+    Binary.put a >> Binary.put b >> Binary.put c
+
 encodeFrameId :: FrameId -> Encode.Value
 encodeFrameId (FrameId mod def frameIdx) =
   Encode.object $
@@ -188,6 +242,13 @@ encodeFrameId (FrameId mod def frameIdx) =
 
 newtype ExprId = ExprId Int
   deriving (Eq, Ord, Show)
+
+instance Binary ExprId where
+  get =
+    liftM ExprId Binary.get
+
+  put (ExprId a) =
+    Binary.put a
 
 -- ExprId for the (return) value of a frame
 selfExprId :: ExprId

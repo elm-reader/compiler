@@ -16,12 +16,14 @@ import Data.Set (Set)
 import System.Directory (doesDirectoryExist)
 import System.FilePath ((</>))
 
+import qualified Elm.Compiler as Compiler
 import qualified Elm.Compiler.Module as Module
 import qualified Elm.Compiler.Objects as Obj
 import qualified Elm.Docs as Docs
 import Elm.Package (Name, Version)
 import qualified Elm.PerUserCache as PerUserCache
 import Elm.Project.Json (Project(..), AppInfo(..), PkgInfo(..))
+import qualified Elm.Project.Json as ProjectJson
 import qualified Json.Encode as Encode
 
 import qualified Deps.Cache as Cache
@@ -284,7 +286,7 @@ getIface name version info infos depIfaces =
               args <- Args.fromSummary summary
               graph <- Crawl.crawl summary args
               (dirty, cachedIfaces) <- Plan.plan (Just docsPath) summary graph
-              answers <- Compile.compile (Pkg info) (Just docsPath) cachedIfaces dirty Compiler.NoInstrumentation
+              answers <- Compile.compile (Pkg info) (Just docsPath) cachedIfaces dirty (Compiler.NoReader, Compiler.NoInstrumentation)
               results <- Artifacts.ignore answers
               _ <- Artifacts.writeDocs results docsPath
 
@@ -303,6 +305,7 @@ isCached root solution =
     [ IO.exists (root </> "cached.dat")
     , IO.exists (root </> "ifaces.dat")
     , IO.exists (root </> "objs.dat")
+    , IO.exists (root </> "srcmap.dat")
     , IO.exists (root </> "documentation.json")
     , isCachedHelp solution <$> IO.readBinary (root </> "cached.dat")
     ]
@@ -348,6 +351,11 @@ updateCache root name info solution graph results =
 
               IO.writeBinary (root </> "objs.dat") $
                 Map.foldr addGraph (objGraphFromKernels graph) results
+
+              IO.writeBinary (root </> "srcmap.dat") $
+                Compiler.consolidateSourceMaps
+                  (ProjectJson.getName (Pkg info))
+                  results
 
               liftIO $ Encode.write (root </> "documentation.json") $
                 Encode.list Docs.encode $

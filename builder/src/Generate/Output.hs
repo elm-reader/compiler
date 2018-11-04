@@ -71,15 +71,34 @@ generate mode target maybeOutput summary graph@(Crawl.Graph args locals _ _ _) a
     Args.Roots name names ->
       do  objectGraph <- organize summary graph
 
+          let (Summary.Summary _ project _ _ _) = summary
+          let pkg = Project.getName project
+
           realMode <-
             case mode of
               Debug ->
                 do  interfaces <- getInterfaces summary locals artifacts
-                    return $ Mode.debug target interfaces (consolidateSourceMaps summary artifacts)
+                    return $ Mode.debug target interfaces (Compiler.consolidateSourceMaps pkg artifacts)
 
               Reader ->
-                do  interfaces <- getInterfaces summary locals artifacts
-                    return $ Mode.reader target interfaces (consolidateSourceMaps summary artifacts)
+                do
+                    browserVersion <-
+                      let (Summary.Summary _ _ _ _ deps) = summary
+                      in
+                      case filter (\(name, _) -> name == Pkg.browser) (Map.toList deps) of
+                        (_, (version, _)) : _ ->
+                          return version
+
+                        [] ->
+                          Task.throw (Exit.Make E.CannotReadWithoutBrowser)
+
+                    browserSrcMap <- loadPackageSrcMap Pkg.browser browserVersion
+                    interfaces <- getInterfaces summary locals artifacts
+                    let completeSrcMaps =
+                          SrcMap.combineProjects
+                            browserSrcMap
+                            (Compiler.consolidateSourceMaps pkg artifacts)
+                    return $ Mode.reader target interfaces completeSrcMaps
 
               Dev ->
                 return $ Mode.dev target
@@ -114,24 +133,6 @@ getInterfaces (Summary.Summary root project _ interfaces _) locals artifacts =
       return $
         Map.union interfaces $ Map.fromList $
           Map.foldrWithKey addInterface (Map.foldrWithKey addArtifact [] artifacts) cached
-
-
-consolidateSourceMaps
-  :: Summary.Summary
-  -> Map.Map Module.Raw Compiler.Artifacts
-  -> SrcMap.Project
-consolidateSourceMaps (Summary.Summary _ project _ _ _) artifacts =
-  let
-    pkg = Project.getName project
-
-    addSourceMap home (Compiler.Artifacts _ _ _ maybeSrcMap) projectSrcMap =
-      case maybeSrcMap of
-        Nothing ->
-          projectSrcMap
-        Just moduleSrcMap ->
-          SrcMap.addModule (ModuleName.Canonical pkg home) moduleSrcMap projectSrcMap
-  in
-  Map.foldrWithKey addSourceMap SrcMap.emptyProject artifacts
 
 
 -- GENERATE MONOLITH
@@ -229,6 +230,12 @@ loadPackageObj :: ( Pkg.Name, (Pkg.Version, deps) ) -> Task.Task Obj.Graph
 loadPackageObj ( name, (version,_) ) =
   do  dir <- Task.getPackageCacheDirFor name version
       IO.readBinary (dir </> "objs.dat")
+
+
+loadPackageSrcMap :: Pkg.Name -> Pkg.Version -> Task.Task SrcMap.Project
+loadPackageSrcMap name version =
+  do  dir <- Task.getPackageCacheDirFor name version
+      IO.readBinary (dir </> "srcmap.dat")
 
 
 

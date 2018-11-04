@@ -5,6 +5,7 @@ import Html exposing (div)
 import List
 
 
+main : Program () (List Int, List Int, Int) ()
 main =
     Browser.sandbox
         { init = ( init, initWithoutPipes, fib10 )

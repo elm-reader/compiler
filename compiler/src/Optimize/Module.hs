@@ -5,13 +5,13 @@ module Optimize.Module
   )
   where
 
-
 import Prelude hiding (cycle)
 import Control.Monad (foldM)
 import qualified Data.List as List
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Map ((!))
+import Data.Text (Text, unpack)
 
 import qualified AST.Canonical as Can
 import qualified AST.Optimized as Opt

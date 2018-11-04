@@ -48,7 +48,7 @@ ignore answers =
 write :: FilePath -> Map Module.Raw Answer -> Task.Task (Map Module.Raw Compiler.Artifacts)
 write root answers =
   let
-    writer name result@(Compiler.Artifacts elmi elmo _ _) =
+    writer name result@(Compiler.Artifacts elmi elmo _ srcMap) =
       do  mvar <- newEmptyMVar
           void $ forkIO $
             do  Binary.encodeFile (Path.elmi root name) elmi

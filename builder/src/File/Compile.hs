@@ -26,8 +26,8 @@ import qualified Reporting.Task as Task
 -- COMPILE
 
 
-compile :: Project -> Maybe FilePath -> Module.Interfaces -> Dict Plan.Info -> Compiler.Instrumentation -> Task.Task (Dict Answer)
-compile project maybeDocsPath ifaces modules instrumentation =
+compile :: Project -> Maybe FilePath -> Module.Interfaces -> Dict Plan.Info -> (Compiler.ReaderFlag, Compiler.Instrumentation) -> Task.Task (Dict Answer)
+compile project maybeDocsPath ifaces modules reader =
   do  Task.report (Progress.CompileStart (Map.size modules))
 
       tell <- Task.getReporter
@@ -35,7 +35,7 @@ compile project maybeDocsPath ifaces modules instrumentation =
       answers <- liftIO $
         do  mvar <- newEmptyMVar
             iMVar <- newMVar ifaces
-            answerMVars <- Map.traverseWithKey (compileModule tell project maybeDocsPath mvar iMVar instrumentation) modules
+            answerMVars <- Map.traverseWithKey (compileModule tell project maybeDocsPath mvar iMVar reader) modules
             putMVar mvar answerMVars
             traverse readMVar answerMVars
 
@@ -67,7 +67,7 @@ compileModule
   -> Maybe FilePath
   -> MVar (Dict (MVar Answer))
   -> MVar Module.Interfaces
-  -> Compiler.Instrumentation
+  -> (Compiler.ReaderFlag, Compiler.Instrumentation)
   -> Module.Raw
   -> Plan.Info
   -> IO (MVar Answer)
@@ -95,9 +95,8 @@ compileModule tell project maybeDocsPath answersMVar ifacesMVar reader name info
 
                       (_warnings, Right result@(Compiler.Artifacts elmi _ _ _)) ->
                         do  tell (Progress.CompileFileEnd name Progress.Good)
-                            let canonicalName = Module.Canonical pkg name
                             lock <- takeMVar ifacesMVar
-                            putMVar ifacesMVar (Map.insert canonicalName elmi lock)
+                            putMVar ifacesMVar (Map.insert (Module.Canonical pkg name) elmi lock)
                             putMVar mvar (Good result)
 
       return mvar

@@ -19,6 +19,7 @@ data Exit
   = CannotMakeNothing
   | CannotOptimizeDebugValues Module.Raw [Module.Raw]
   | CannotOptimizeAndDebug
+  | CannotReadWithoutBrowser
 
 
 
@@ -73,3 +74,8 @@ toReport exit =
             \ add information to add the debugger. It is impossible to do both\
             \ at once, so pick just one of those flags."
         ]
+
+    CannotReadWithoutBrowser ->
+      Help.report "NO BROWSER" Nothing
+      "You built with --reader or --debug, but do not have the 'elm/browser' package as a dependency"
+      []

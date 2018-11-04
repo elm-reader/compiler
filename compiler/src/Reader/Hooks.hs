@@ -37,7 +37,7 @@ symbol name freeVars type_ =
       Can.Forall freeVarsMap type_
 
     expr =
-      Can.VarForeign ModuleName.reader (N.fromText name) annot
+      Can.VarKernel (N.fromText "Reader") (N.fromText name)
   in
     A.At R.zero expr
 

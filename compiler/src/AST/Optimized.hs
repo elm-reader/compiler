@@ -23,7 +23,7 @@ import Data.Binary
 import qualified Data.ByteString as BS
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Text (Text)
+import Data.Text (Text, unpack)
 
 import qualified AST.Canonical as Can
 import qualified AST.Module.Name as ModuleName
@@ -70,7 +70,11 @@ data Expr
 
 
 data Global = Global ModuleName.Canonical N.Name
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Ord)
+
+instance Show Global where
+  show (Global (ModuleName.Canonical (Pkg.Name author proj) module_) name) =
+    "<" ++ unpack author ++ "/" ++ unpack proj ++ ">" ++ unpack (N.toText module_) ++ "." ++ unpack (N.toText name)
 
 
 -- Provide "List" not "Elm.Kernel.List"

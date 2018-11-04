@@ -42,7 +42,7 @@ instrument source module_ =
         ++ "transformed to:\n"
         ++ ppShow instrumented
   in
-  trace message instrumented
+  instrumented
 
 
 instrumentModule :: BS.ByteString -> Can.Module -> (Can.Module, SrcMap.Module)
