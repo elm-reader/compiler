@@ -3,7 +3,7 @@
 module Elm.Package
   ( Name(..)
   , Package(..)
-  , isKernel, isBrowser
+  , isKernel
   , toString, toText, toUrl, toFilePath
   , fromText
   , dummyName, kernel, core
@@ -72,10 +72,6 @@ data Package =
 isKernel :: Name -> Bool
 isKernel (Name author _) =
   author == "elm" || author == "elm-explorations"
-
-isBrowser :: Name -> Bool
-isBrowser (Name author proj) =
-  author == "elm" || proj == "browser"
 
 
 toString :: Name -> String

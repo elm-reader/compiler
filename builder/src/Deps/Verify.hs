@@ -20,7 +20,7 @@ import qualified Elm.Compiler as Compiler
 import qualified Elm.Compiler.Module as Module
 import qualified Elm.Compiler.Objects as Obj
 import qualified Elm.Docs as Docs
-import Elm.Package (Name, Version, isBrowser)
+import Elm.Package (Name, Version)
 import qualified Elm.PerUserCache as PerUserCache
 import Elm.Project.Json (Project(..), AppInfo(..), PkgInfo(..))
 import qualified Elm.Project.Json as ProjectJson
@@ -286,12 +286,7 @@ getIface name version info infos depIfaces =
               args <- Args.fromSummary summary
               graph <- Crawl.crawl summary args
               (dirty, cachedIfaces) <- Plan.plan (Just docsPath) summary graph
-              let reader =
-                    if isBrowser name then
-                      (Compiler.YesReader, Compiler.Instrument)
-                    else
-                      (Compiler.NoReader, Compiler.NoInstrumentation)
-              answers <- Compile.compile (Pkg info) (Just docsPath) cachedIfaces dirty reader
+              answers <- Compile.compile (Pkg info) (Just docsPath) cachedIfaces dirty (Compiler.NoReader, Compiler.NoInstrumentation)
               results <- Artifacts.ignore answers
               _ <- Artifacts.writeDocs results docsPath
 
