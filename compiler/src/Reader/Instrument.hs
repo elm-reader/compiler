@@ -150,17 +150,20 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
           return (locExpr, noAnswers)
 
     Can.VarTopLevel home name ->
-      return (locExpr, makeQualified exprId region home name)
+      -- TODO: annotate top level vars, foreign vars, and constructors in the
+      -- source map specially, to use consistent exprIds for each occurance, and
+      -- generate a single static map indicating their values at initialization.
+      return (recordExpr exprId locExpr, makeQualified exprId region home name)
 
     Can.VarKernel _ _ ->
       -- TODO: How should we handle kernel variables?
       return (locExpr, noAnswers)
 
     Can.VarForeign home name _ ->
-      return (locExpr, makeQualified exprId region home name)
+      return (recordExpr exprId locExpr, makeQualified exprId region home name)
 
     Can.VarCtor _ home name _ _ ->
-      return (locExpr, makeQualified exprId region home name)
+      return (recordExpr exprId locExpr, makeQualified exprId region home name)
 
     Can.VarDebug home name _ ->
       return (locExpr, makeQualified exprId region home name)
@@ -457,10 +460,13 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let
           newRecord =
-            A.At region $ Can.Record $ Map.fromList newFields
+            recordExpr exprId $ A.At region $ Can.Record $ Map.fromList newFields
+
+          recordSrcMap =
+            makeExprRegion exprId qualifiedRegion
 
           srcMap =
-            combineMany fieldSrcMaps
+            combineMany (recordSrcMap : fieldSrcMaps)
 
         return (newRecord, srcMap)
 
@@ -483,10 +489,13 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
 
         let
           newTuple =
-            A.At region $ Can.Tuple newA newB newC
+            recordExpr exprId $ A.At region $ Can.Tuple newA newB newC
+
+          tupleSrcMap =
+            makeExprRegion exprId qualifiedRegion
 
           srcMap =
-            combine aSrcMap $ combine bSrcMap cSrcMap
+            combineMany [ aSrcMap, bSrcMap, cSrcMap, tupleSrcMap ]
 
         return (newTuple, srcMap)
 
@@ -606,15 +615,12 @@ instrumentPattern ctx (A.At region pat) =
         exprId <- freshExprId
 
         let
-          ctorSrcMap =
-            makeQualified exprId region home name
-
           instrumentArg (Can.PatternCtorArg _ _ arg) =
             instrumentPattern ctx arg
 
         (argVars, argAnswers) <- unzip <$> traverse instrumentArg args
 
-        return (Bag.concat argVars, combine ctorSrcMap $ combineMany argAnswers)
+        return (Bag.concat argVars, combineMany argAnswers)
 
 
 
