@@ -498,7 +498,7 @@ letHelp start oldIndent revDefs end pos =
           popContext ()
           spaces
           (body, newEnd, newPos) <- expression
-          let letExpr = A.at start end (Src.Let (reverse revDefs) body)
+          let letExpr = A.at start newEnd (Src.Let (reverse revDefs) body)
           return ( letExpr, newEnd, newPos )
     ]
 
