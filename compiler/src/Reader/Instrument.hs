@@ -214,12 +214,17 @@ instrumentExprWithId ctx exprId locExpr@(A.At region expr) =
           binopNameSrcMap =
             makeExprName exprId home name
 
-          newBinop =
-            recordExpr exprId $
-            A.At region $ Can.Binop shortName home name typeAnnot newLeft newRight
-
           srcMap =
             combine leftSrcMap $ combine rightSrcMap $ combine binopRegionSrcMap binopNameSrcMap
+
+        newBinop <-
+          if N.toString shortName == "<|" then
+            recordCall exprId newLeft [ newRight ]
+          else if N.toString shortName == "|>" then
+            -- TODO: this reverses execution order. Augment recordCall to avoid this.
+            recordCall exprId newRight [ newLeft ]
+          else
+            return $ recordExpr exprId $ A.At region $ Can.Binop shortName home name typeAnnot newLeft newRight
 
         return (newBinop, srcMap)
 
